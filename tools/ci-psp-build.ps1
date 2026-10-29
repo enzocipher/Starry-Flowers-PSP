@@ -10,7 +10,7 @@ if (-not (Test-Path -LiteralPath $taskStorySource -PathType Leaf)) {
 
 # psp/story.json is ignored and normally generated from local original assets.
 # CI stages the repository's real compiled story so this build needs no assets.
-$null = Get-Content -LiteralPath $taskStorySource -Raw | ConvertFrom-Json
+$null = Get-Content -LiteralPath $taskStorySource -Raw | ConvertFrom-Json -AsHashtable
 Copy-Item -LiteralPath $taskStorySource -Destination $taskPspStory -Force
 
 Push-Location (Join-Path $taskRoot 'psp')
