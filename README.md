@@ -1,57 +1,57 @@
 # Starry Flowers — PSP / Rust
 
-Port nativo en Rust para PSP, mantenido en la rama `main` de [Starry-Flowers-PSP](https://github.com/enzocipher/Starry-Flowers-PSP). La versión de PC está en [Starry-Flowers-but-in-Rust](https://github.com/enzocipher/Starry-Flowers-but-in-Rust).
+Native Rust port for PSP, maintained on the `main` branch of [Starry-Flowers-PSP](https://github.com/enzocipher/Starry-Flowers-PSP). The PC version is available at [Starry-Flowers-but-in-Rust](https://github.com/enzocipher/Starry-Flowers-but-in-Rust).
 
-El firmware está en `psp/`; el motor narrativo y el layout que utiliza se incluyen en `src/`. El `Cargo.toml` de la raíz compila solamente esa biblioteca para pruebas de host, sin Macroquad ni aplicación de PC. Todos los scripts se ejecutan desde la raíz de este repositorio, que tiene su propia carpeta local `assets/`.
+The firmware is in `psp/`; the narrative engine and the layout it uses are included in `src/`. The root `Cargo.toml` only builds that library for host tests, without Macroquad or a PC application. All scripts run from the repository root, which has its own local `assets/` directory.
 
-## Ejecutar
+## Running
 
-- ISO: `psp/dist/StarryFlowers.iso`, para PPSSPP o una PSP con firmware compatible con homebrew e imágenes ISO.
-- Homebrew: copiar `psp/dist/EBOOT.PBP` y la carpeta `psp/dist/DATA` a `PSP/GAME/StarryFlowers/` en la Memory Stick.
-- Los guardados propios están en `PSP/SAVEDATA/STARRYFLOWERS`. No son los guardados de Ren'Py ni de Windows.
+- ISO: `psp/dist/StarryFlowers.iso`, for PPSSPP or a PSP with compatible homebrew firmware and ISO support.
+- Homebrew: copy `psp/dist/EBOOT.PBP` and the `psp/dist/DATA` directory to `PSP/GAME/StarryFlowers/` on the Memory Stick.
+- Its save data is stored in `PSP/SAVEDATA/STARRYFLOWERS`. These are not Ren'Py or Windows save files.
 
-La ISO y el EBOOT incluyen `ICON0.PNG` (144×80) y `PIC1.PNG` (480×272), preparados a partir del logo y el fondo originales para mostrar el juego en PPSSPP y el menú de PSP.
+The ISO and EBOOT include `ICON0.PNG` (144×80) and `PIC1.PNG` (480×272), prepared from the original logo and background so they are displayed in PPSSPP and the PSP menu.
 
-La ISO incorpora un ejecutable MIPS PSP real y los recursos convertidos de tu copia de Starry Flowers 1.7.4. El juego no requiere Python ni Ren'Py al ejecutarse.
+The ISO includes a real MIPS PSP executable and converted resources from your copy of Starry Flowers 1.7.4. The game does not require Python or Ren'Py at runtime.
 
-## Controles
+## Controls
 
-| Control | Acción |
+| Control | Action |
 |---|---|
-| Cruceta | Seleccionar opciones o accesorios |
-| X | Completar texto, avanzar o confirmar |
-| O / L | Retroceder un diálogo; O vuelve en los menús |
-| R mantenido | Saltar texto leído |
-| Select | Activar/desactivar salto |
-| Cuadrado | Activar/desactivar avance automático |
-| Triángulo | Ocultar/mostrar diálogo |
-| Start | Menú, ajustes y seis ranuras de guardado |
-| Cuadrado / Triángulo en accesorios | Guardar/cargar accesorios favoritos |
+| D-pad | Select options or accessories |
+| X | Complete text, advance, or confirm |
+| O / L | Go back one dialogue; O goes back in menus |
+| Hold R | Skip read text |
+| Select | Toggle skipping |
+| Square | Toggle auto-advance |
+| Triangle | Hide/show dialogue |
+| Start | Menu, settings, and six save slots |
+| Square / Triangle in accessories | Save/load favorite accessories |
 
-Idioma inicial inglés; español seleccionable en Settings. Ajustes de velocidad de texto, avance automático, volúmenes separados, silenciar todo y comportamiento del salto. Los ajustes usan barras de flores y controles originales, agrupados para la pantalla de PSP. Se incluyen ambos recorridos iniciales, los capítulos, epílogo y ocho extras, además de una galería disponible al terminar.
+English is the initial language; Spanish can be selected in Settings. Options include text speed, auto-advance, separate volume controls, mute all, and skip behavior. Settings use flower bars and the original controls, grouped for the PSP screen. Both initial routes, the chapters, epilogue, and eight extras are included, along with a gallery unlocked upon completion.
 
-## Compilar en Windows
+## Building on Windows
 
-Requiere Rust nightly con `rust-src`, `cargo-psp 0.2.9`, Python y los recursos originales en `../assets`. Se ha compilado con nightly de **2026-10-05**, host Windows GNU. Las versiones de Pillow, imageio-ffmpeg y pycdlib usadas por la preparación y el empaquetado están fijadas en `tools/requirements-psp.txt`.
+Requires Rust nightly with `rust-src`, `cargo-psp 0.2.9`, Python, and the original resources in `../assets`. It has been built with nightly **2026-10-05**, Windows GNU host. The Pillow, imageio-ffmpeg, and pycdlib versions used for preparation and packaging are pinned in `tools/requirements-psp.txt`.
 
 ```powershell
 rustup toolchain install nightly-x86_64-pc-windows-gnu --component rust-src --profile minimal
 cargo install cargo-psp --version 0.2.9
 python -m pip install -r tools/requirements-psp.txt
-# Desde la raíz del repositorio:
+# From the repository root:
 ./tools/build_psp.ps1 -Python python
 ```
 
-`prepare_psp.py` conserva el arte fuente y lo convierte en mosaicos PSP GE DXT5 con mipmaps; mantiene la geometría lógica del juego a escala 0,375, genera atlas de Nunito y convierte el audio a PCM estéreo de 44,1 kHz. La caché usa hashes de contenido y configuración para reutilizar imágenes y audio sin cambios. El manifiesto se valida antes de retirar archivos generados obsoletos que pertenecían al manifiesto anterior; los archivos desconocidos se conservan. `package_psp.py` genera la ISO y comprueba que `PSP_GAME/SYSDIR/EBOOT.BIN` contenga el ejecutable ELF nativo. Los archivos generados y los recursos del juego están excluidos de Git.
+`prepare_psp.py` preserves the source art and converts it to PSP GE DXT5 tiles with mipmaps; it keeps the game's logical geometry at 0.375 scale, generates a Nunito atlas, and converts audio to 44.1 kHz stereo PCM. The cache uses content and configuration hashes to reuse unchanged images and audio. The manifest is validated before obsolete generated files from the previous manifest are removed; unknown files are preserved. `package_psp.py` generates the ISO and checks that `PSP_GAME/SYSDIR/EBOOT.BIN` contains the native ELF executable. Generated files and game resources are excluded from Git.
 
-Desde la raíz del repositorio, ejecuta la preparación manual o las pruebas del pipeline así:
+From the repository root, run manual preparation or pipeline tests as follows:
 
 ```powershell
 python tools/prepare_psp.py
 python -m unittest discover -s tools -p 'test_psp*.py'
 ```
 
-La segunda preparación reutiliza los recursos cuyo contenido y receta no cambiaron. Para probar los bloques de audio en el host sin compilar el firmware PSP:
+The second preparation reuses resources whose content and recipe have not changed. To test audio blocks on the host without building the PSP firmware:
 
 ```powershell
 $audioTest = Join-Path $env:TEMP 'starryflowers-audio-block-tests.exe'
@@ -59,38 +59,38 @@ rustc --test psp/src/audio_blocks.rs -o $audioTest
 & $audioTest
 ```
 
-## Memoria y SDK
+## Memory and SDK
 
-Se compila la copia del motor narrativo incluida en este repositorio, adaptando sus colecciones a `alloc::collections::BTreeMap`. El ejecutable usa `no_std`, el SDK de PSP para archivos, mandos, pantalla y audio, un área de memoria de 18 MiB y una caché de texturas de 6 MiB que cuenta el próximo mosaico antes de cargarlo. Tres superficies alineadas de 1 MiB conservan el fondo, la escena y la escena anterior durante las transiciones; los atlas más usados permanecen en la caché. Se solicitan 333 MHz de CPU y 166 MHz de bus dentro de los límites del SDK; esto prioriza rendimiento sobre autonomía.
+The copy of the narrative engine included in this repository is compiled, adapting its collections to `alloc::collections::BTreeMap`. The executable uses `no_std`, the PSP SDK for files, controls, display, and audio, an 18 MiB memory area, and a 6 MiB texture cache that accounts for the next tile before loading it. Three aligned 1 MiB surfaces keep the background, current scene, and previous scene during transitions; the most-used atlases remain cached. CPU and bus speeds of 333 MHz and 166 MHz are requested within SDK limits; this prioritizes performance over battery life.
 
-`third_party/psp` procede de `psp 0.3.14` (licencia MIT incluida). Su asignador original creaba un objeto del kernel por cada asignación; el guion agotaba el límite de objetos al cargar. El parche utiliza `linked_list_allocator` dentro de una sola reserva. Los trabajadores de audio no asignan memoria durante la reproducción. Los guardados se escriben primero en un archivo temporal y conservan un respaldo durante el reemplazo.
+`third_party/psp` comes from `psp 0.3.14` (MIT license included). Its original allocator created a kernel object for every allocation; the script exhausted the object limit while loading. The patch uses `linked_list_allocator` within a single reservation. Audio workers do not allocate memory during playback. Saves are first written to a temporary file and keep a backup during replacement.
 
-La revisión del 29 de octubre de 2026 valida los índices de accesorios, favoritos, pila y posición antes de cargar partidas; también comprueba un respaldo cuando el JSON principal es legible pero su estado es inválido. Normaliza ajustes y limita los reintentos de escritura automática a dos segundos. La música reintenta aperturas y errores de lectura con una espera de 500 ms; los errores repetidos de salida vuelven a reservar el canal. El EOF normal de efectos no dispara repeticiones.
+The October 29, 2026 revision validates accessory, favorite, stack, and position indices before loading saves; it also checks a backup when the main JSON is readable but its state is invalid. It normalizes settings and limits automatic write retries to two seconds. Music retries opening and read errors with a 500 ms delay; repeated output errors re-reserve the channel. Normal effects EOF does not trigger repeats.
 
-Los glifos y las imágenes comparten sus nombres de archivo mediante `Arc<str>`, evitando asignar otra cadena por glifo y por copia de escena. La preparación v11 conserva la resolución fuente y comprueba los tres niveles de cada mosaico: si DXT5 supera el umbral de error, guarda su cadena completa en RGBA. En los recursos actuales son 5 de 2.567 mosaicos y 149.184 bytes adicionales. El verificador compara 7.701 niveles con el arte original y los 2.600 recursos de la ISO con los archivos preparados.
+Glyphs and images share their file names through `Arc<str>`, avoiding another string allocation per glyph and per scene copy. Preparation v11 preserves source resolution and checks all three levels of each tile: if DXT5 exceeds the error threshold, it stores the full chain in RGBA. In the current resources, this is 5 of 2,567 tiles and 149,184 additional bytes. The verifier compares 7,701 levels against the original art and the ISO's 2,600 resources against the prepared files.
 
-## Verificación y límites
+## Verification and limitations
 
-`python tools/package_psp.py --audit` genera una ISO independiente para pruebas automáticas. Esta arranca en PPSSPP, captura el menú y el primer diálogo, recorre las dos rutas y los ocho extras, comprueba guardar/cargar y sobrescribir ajustes, y registra bloques de audio reproducidos. El resultado se escribe en `PSP/SAVEDATA/STARRYFLOWERS/AUDIT.JSON`. La ISO normal no activa esta prueba. `python tools/package_psp.py --performance-audit` permite ejecutar la comparación visual de ajustes, 120 cuadros de navegación, la transición de arranque y 120 diálogos con salto y renderizado real. Se verifica que navegar y animar la transición no carguen texturas ni reconstruyan escenas. Las pantallas de guardar/cargar leen las partidas una vez al entrar y actualizan la lista después de guardar.
+`python tools/package_psp.py --audit` generates a separate ISO for automated tests. It boots in PPSSPP, captures the menu and first dialogue, plays through both routes and the eight extras, checks saving/loading and overwriting settings, and records played audio blocks. The result is written to `PSP/SAVEDATA/STARRYFLOWERS/AUDIT.JSON`. The normal ISO does not enable this test. `python tools/package_psp.py --performance-audit` runs the visual settings comparison, 120 navigation frames, the startup transition, and 120 dialogues with skipping and real rendering. It verifies that navigation and transition animation do not load textures or rebuild scenes. Save/load screens read saves once on entry and refresh the list after saving.
 
-El renderizador alterna dos búferes de pantalla y utiliza un tercer búfer reservado al componer transiciones, sin escribir sobre el que se está mostrando. Fuera de las mezclas dibuja las texturas a resolución fuente directamente, conservando el detalle al escalar en PPSSPP. Cada transición comprueba el diálogo de origen: una pantalla de ajustes no puede actuar como la escena anterior del juego. Un diálogo con los mismos gráficos actualiza su origen sin reconstruir la caché ni repetir una transición antigua. Cancelar skip tampoco reinicia los efectos omitidos. El ajuste de líneas usa avances de glifos y una caché limitada a 16 entradas. La caché de texturas mantiene su límite de 6 MiB, conserva el atlas de nombres y escribe a memoria solamente la textura recién cargada.
+The renderer alternates between two screen buffers and uses a third buffer reserved for composing transitions, without writing to the one currently displayed. Outside blends, it draws textures at source resolution, preserving detail when scaling in PPSSPP. Each transition checks its source dialogue: a settings screen cannot act as the previous game scene. A dialogue with the same graphics updates its source without rebuilding the cache or repeating an old transition. Cancelling skip also does not restart skipped effects. Line layout uses glyph advances and a cache limited to 16 entries. The texture cache stays within its 6 MiB limit, keeps the name atlas, and writes to memory only the newly loaded texture.
 
-Las pruebas incluyen 12 vueltas entre ajustes y juego en inglés/español, comparando imágenes, y transiciones entre escenas vacías, a mitad de mezcla y entre diálogos con gráficos idénticos. Las capturas usan memoria alineada a 16 bytes para las transferencias GE. Para repetir las pruebas con una instalación de PPSSPP, después de compilar:
+Tests include 12 rounds between settings and the game in English/Spanish, comparing images, and transitions between empty scenes, mid-blend scenes, and dialogues with identical graphics. Captures use 16-byte-aligned memory for GE transfers. To repeat the tests with a PPSSPP installation, after building:
 
 ```powershell
-./tools/test_psp.ps1 -Emulator 'C:/ruta/PPSSPPWindows64.exe' -Mode performance
-./tools/test_psp.ps1 -Emulator 'C:/ruta/PPSSPPWindows64.exe' -Mode full -Resolution 3
-./tools/test_psp.ps1 -Emulator 'C:/ruta/PPSSPPWindows64.exe' -Backend opengl
+./tools/test_psp.ps1 -Emulator 'C:/path/PPSSPPWindows64.exe' -Mode performance
+./tools/test_psp.ps1 -Emulator 'C:/path/PPSSPPWindows64.exe' -Mode full -Resolution 3
+./tools/test_psp.ps1 -Emulator 'C:/path/PPSSPPWindows64.exe' -Backend opengl
 ```
 
-El script copia el emulador a un entorno de prueba dentro de `psp/test-emulator/runs`, con perfil PSP-1000 de 32 MiB, sin usar partidas personales. Guarda informes en `psp/dist` y termina solamente la instancia que inició. Se pueden indicar `-Python` y `-TimeoutSeconds` cuando haga falta. Las cargas de recursos al cambiar de escena todavía pueden producir cuadros más lentos que la navegación o los diálogos ya cargados.
+The script copies the emulator to a test environment inside `psp/test-emulator/runs`, using a 32 MiB PSP-1000 profile and no personal saves. It stores reports in `psp/dist` and terminates only the instance it started. `-Python` and `-TimeoutSeconds` can be specified when needed. Resource loads when changing scenes can still produce slower frames than navigation or already-loaded dialogues.
 
-Se prueba con el perfil PSP-1000 de 32 MiB de PPSSPP. La verificación en emulador no sustituye las pruebas en una PSP física. El renderizado utiliza la GPU de PSP, filtrado bilineal y mipmaps, transparencias y una caché de escenas en RAM a la resolución nativa de 480×272, evitando los alias de framebuffer que producían glitches en PPSSPP. Las fuentes y los controles se dibujan encima con los atlas originales a cuatro veces su tamaño. Los recursos originales de Windows se conservan; PSP utiliza arte adaptado a su resolución, audio estéreo, inglés/español y retroceso limitado a 32 diálogos; las animaciones de escena y la presentación de créditos son simplificadas. No tiene todavía todas las opciones visuales y de idiomas de Windows.
+Testing uses the 32 MiB PSP-1000 profile in PPSSPP. Emulator verification does not replace testing on physical PSP hardware. Rendering uses the PSP GPU, bilinear filtering and mipmaps, transparency, and a scene cache in RAM at the native 480×272 resolution, avoiding the framebuffer aliasing that caused glitches in PPSSPP. Fonts and controls are drawn on top with the original atlases at four times their size. The original Windows resources are preserved; PSP uses art adapted to its resolution, stereo audio, English/Spanish, and a limited rollback of 32 dialogues; scene animations and the credits presentation are simplified. It does not yet have all of Windows' visual and language options.
 
-Historia, arte y música originales: **NomnomNami**. Tema final “Pretty in Pink”: **Marlene Bellissimo**. Se conserva la autoría y licencia de los recursos originales.
+Original story, art, and music: **NomnomNami**. Ending theme “Pretty in Pink”: **Marlene Bellissimo**. The authorship and license of the original resources are preserved.
 
-Los corazones azul, rojo y marrón se verifican en sus diálogos originales. Los gráficos Twemoji son de Twitter y colaboradores (CC-BY 4.0); los archivos originales de atribución se conservan junto a los recursos preparados.
+The blue, red, and brown hearts are verified in their original dialogues. Twemoji graphics are from Twitter and contributors (CC-BY 4.0); the original attribution files are preserved alongside the prepared resources.
 
-About está disponible desde el menú inicial y el menú durante la partida. Izquierda/derecha o X recorren los créditos completos; O vuelve. Se incluyen los autores de las 13 traducciones del original, aunque PSP permite jugar en inglés/español, además de las listas completas de pruebas, agradecimientos y mecenas. La licencia original de Ren'Py está en `DATA/RENPY.TXT`.
+About is available from the initial menu and the in-game menu. Left/right or X cycles through the complete credits; O goes back. The authors of all 13 translations from the original are included, even though PSP supports English/Spanish gameplay, along with complete lists of testers, acknowledgements, and patrons. The original Ren'Py license is in `DATA/RENPY.TXT`.
 
-El salto avanza como máximo cada 80 ms. Cancelarlo y detenerse ante texto no leído bloquea R hasta soltarlo; no se repiten los efectos de cámara ni las transiciones durante el salto. Las marcas de lectura se guardan cada dos segundos o al salir de la partida, en lugar de escribir por cada diálogo. El fondo estable se conserva aparte del retrato y la caja de diálogo. Los atlas se vinculan una vez por grupo de glifos consecutivos. La prueba de salto exige menos de 40 ms de media y 60 ms en el percentil 95; los resultados están en verification.json.
+Skipping advances at most every 80 ms. Cancelling it and stopping at unread text blocks R until it is released; skipped camera effects and transitions are not repeated. Read markers are saved every two seconds or when leaving the game, instead of writing for every dialogue. The stable background is kept separate from the portrait and dialogue box. Atlases are bound once per group of consecutive glyphs. The skip test requires less than 40 ms on average and 60 ms at the 95th percentile; results are in `verification.json`.
