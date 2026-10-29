@@ -59,7 +59,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          rustup toolchain install nightly-2026-10-05 --host x86_64-pc-windows-gnu --profile minimal --component rust-src
+          rustup toolchain install nightly-2026-10-05-x86_64-pc-windows-gnu --profile minimal --component rust-src
           if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned PSP Rust toolchain.' }
           cargo install cargo-psp --version 0.2.9 --locked
           if ($LASTEXITCODE -ne 0) { throw 'Could not install cargo-psp 0.2.9.' }
