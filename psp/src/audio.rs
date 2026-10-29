@@ -1,4 +1,5 @@
 //! Native blocking audio workers; no allocation or spin locks on audio threads.
+use crate::audio_blocks::{self, FillOutcome};
 use alloc::{collections::BTreeMap, format, string::String, sync::Arc, vec::Vec};
 use core::{
     ffi::c_void,
@@ -6,6 +7,11 @@ use core::{
     sync::atomic::{AtomicI32, AtomicU32, Ordering},
 };
 use psp::sys;
+
+const BLOCK_BYTES: usize = 4096;
+const BLOCK_SAMPLES: usize = BLOCK_BYTES / core::mem::size_of::<i16>();
+const MAX_OUTPUT_ERRORS: u8 = 3;
+const RETRY_DELAY_US: i64 = 500_000;
 
 struct Shared {
     paths: Vec<Vec<u8>>,
@@ -93,41 +99,108 @@ impl Audio {
 }
 unsafe extern "C" fn worker(_: usize, arg: *mut c_void) -> i32 {
     let shared = Arc::from_raw(*(arg as *const *const Shared));
-    let channel = sys::sceAudioChReserve(-1, 1024, sys::AudioFormat::Stereo);
-    shared.status.store(channel, Ordering::Relaxed);
-    if channel < 0 {
-        return channel;
-    }
+    let mut channel = -1;
+    let mut channel_retry_at = 0;
     let mut fd = sys::SceUid(-1);
     let mut generation = u32::MAX;
-    let mut samples = [0i16; 2048];
+    let mut samples = [0i16; BLOCK_SAMPLES];
+    let mut output_errors = 0u8;
+    let mut retry_open = false;
+    let mut file_retry_at = 0;
     loop {
+        let time = sys::sceKernelGetSystemTimeWide();
+        if channel < 0 {
+            if time < channel_retry_at {
+                sys::sceKernelDelayThread(10_000);
+                continue;
+            }
+            channel = sys::sceAudioChReserve(-1, 1024, sys::AudioFormat::Stereo);
+            shared.status.store(channel, Ordering::Relaxed);
+            if channel < 0 {
+                channel_retry_at = time + RETRY_DELAY_US;
+                sys::sceKernelDelayThread(10_000);
+                continue;
+            }
+        }
         let next = shared.generation.load(Ordering::Acquire);
-        if next != generation {
+        if next != generation || retry_open && time >= file_retry_at {
             generation = next;
+            output_errors = 0;
             if fd.0 >= 0 {
                 sys::sceIoClose(fd);
             }
+            let selected = shared.selected.load(Ordering::Relaxed) as usize;
             fd = shared
                 .paths
-                .get(shared.selected.load(Ordering::Relaxed) as usize)
+                .get(selected)
                 .map(|p| sys::sceIoOpen(p.as_ptr(), sys::IoOpenFlags::RD_ONLY, 0))
                 .unwrap_or(sys::SceUid(-1));
+            retry_open = shared.looping && fd.0 < 0 && selected < shared.paths.len();
+            file_retry_at = time + RETRY_DELAY_US;
         }
         if fd.0 < 0 {
             sys::sceKernelDelayThread(10_000);
             continue;
         }
         samples.fill(0);
-        let n = sys::sceIoRead(fd, samples.as_mut_ptr().cast(), 4096);
-        if n <= 0 {
-            if shared.looping && n == 0 {
-                sys::sceIoLseek(fd, 0, sys::IoWhence::Set);
-            } else {
-                sys::sceIoClose(fd);
-                fd = sys::SceUid(-1);
-            }
+        let outcome = audio_blocks::fill_block(
+            unsafe {
+                core::slice::from_raw_parts_mut(samples.as_mut_ptr().cast::<u8>(), BLOCK_BYTES)
+            },
+            shared.looping,
+            |buffer| {
+                let n =
+                    unsafe { sys::sceIoRead(fd, buffer.as_mut_ptr().cast(), buffer.len() as u32) };
+                if n >= 0 {
+                    Ok(n as usize)
+                } else {
+                    Err(())
+                }
+            },
+            || {
+                if sys::sceIoLseek(fd, 0, sys::IoWhence::Set) >= 0 {
+                    Ok(())
+                } else {
+                    Err(())
+                }
+            },
+        );
+        let n = match outcome {
+            FillOutcome::Full => BLOCK_BYTES,
+            FillOutcome::EndOfFile { bytes } => bytes,
+            FillOutcome::EmptyLoop { bytes } => bytes,
+            FillOutcome::IoErrors { bytes, .. } => bytes,
+        };
+        // Only music retries failed I/O. A completed effect or an empty loop
+        // must stay stopped until the next selection, rather than replaying.
+        if shared.looping && matches!(outcome, FillOutcome::IoErrors { .. }) {
+            retry_open = true;
+            file_retry_at = time + RETRY_DELAY_US;
+        }
+        if n == 0 {
+            // Close EOF/error sources; any music retry waits for its deadline.
+            sys::sceIoClose(fd);
+            fd = sys::SceUid(-1);
+            sys::sceKernelDelayThread(10_000);
             continue;
+        }
+        if matches!(
+            outcome,
+            FillOutcome::EmptyLoop { .. } | FillOutcome::IoErrors { .. }
+        ) {
+            sys::sceIoClose(fd);
+            fd = sys::SceUid(-1);
+        }
+        // The helper leaves the tail untouched for non-looping partial blocks.
+        // Clear it explicitly so playback never emits stale samples.
+        if n < BLOCK_BYTES {
+            unsafe {
+                core::ptr::write_bytes(
+                    (samples.as_mut_ptr().cast::<u8>()).add(n),
+                    0,
+                    BLOCK_BYTES - n,
+                );
+            }
         }
         let result = sys::sceAudioOutputBlocking(
             channel,
@@ -136,8 +209,17 @@ unsafe extern "C" fn worker(_: usize, arg: *mut c_void) -> i32 {
         );
         if result >= 0 {
             shared.blocks.fetch_add(1, Ordering::Relaxed);
+            output_errors = 0;
         } else {
+            output_errors = output_errors.saturating_add(1);
             sys::sceKernelDelayThread(10_000);
+        }
+        if output_errors >= MAX_OUTPUT_ERRORS {
+            shared.status.store(result, Ordering::Relaxed);
+            sys::sceAudioChRelease(channel);
+            channel = -1;
+            channel_retry_at = sys::sceKernelGetSystemTimeWide() + RETRY_DELAY_US;
+            output_errors = 0;
         }
     }
 }

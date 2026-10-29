@@ -1,0 +1,69 @@
+name: CI PSP
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host-tests:
+    name: Rust engine, layout, audio, and Python tests
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      # actions/checkout v4.2.2, pinned to its verified commit.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # actions/setup-python v5.6.0, pinned to its verified commit.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12.3'
+
+      - name: Install pinned Python test dependency
+        run: python -m pip install --disable-pip-version-check Pillow==12.3.0
+
+      - name: Test Rust engine and layout
+        run: cargo test --lib --locked --no-default-features
+
+      - name: Test PSP audio, playback, and persistence on the host
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($taskModule in @('audio_blocks', 'playback', 'persistence')) {
+            $taskTestExe = Join-Path $env:RUNNER_TEMP "starryflowers-$taskModule-tests.exe"
+            rustc --edition=2021 --test "psp/src/$taskModule.rs" -o $taskTestExe
+            if ($LASTEXITCODE -ne 0) { throw "Rust $taskModule test compilation failed." }
+            & $taskTestExe
+            if ($LASTEXITCODE -ne 0) { throw "Rust $taskModule tests failed." }
+          }
+
+      - name: Test Python PSP pipeline and texture helpers
+        run: python -m unittest discover -s tools -p 'test_psp*.py'
+
+  psp-build:
+    name: Compile PSP homebrew with the tracked story
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      # actions/checkout v4.2.2, pinned to its verified commit.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install pinned PSP Rust toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          rustup toolchain install nightly-2026-10-05 --host x86_64-pc-windows-gnu --profile minimal --component rust-src
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install the pinned PSP Rust toolchain.' }
+          cargo install cargo-psp --version 0.2.9 --locked
+          if ($LASTEXITCODE -ne 0) { throw 'Could not install cargo-psp 0.2.9.' }
+
+      - name: Build PSP executable using the real tracked story
+        shell: pwsh
+        run: ./tools/ci-psp-build.ps1

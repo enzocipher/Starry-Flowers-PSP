@@ -1,88 +1,333 @@
 {
   "accessory_screens": 8,
-  "audio_blocks": 852,
+  "audio_blocks": 1070,
+  "audio_open_recovery": true,
+  "bus_mhz": 166,
+  "cpu_mhz": 333,
   "decisions": 2,
   "dialogues": 4781,
   "endings": 2,
   "extras": 8,
-  "passed": true,
-  "save_reload": true,
-  "settings_overwrite": true,
-  "emulator": "PPSSPP 1.20.4 Windows x64",
-  "emulated_model": "PSP-1000 / 32 MiB",
-  "physical_hardware_tested": false,
-  "toolchain": "rustc 1.101.0-nightly (282215592 2026-10-04)",
-  "heap_mib": 18,
-  "renderer": "PSP GU GPU sprites; aligned RAM scene/prefix/transition cache; pinned UI font atlases",
-  "texture_source": "Native-resolution (0.375), transparent-margin cropped RGBA, direct aligned reads",
-  "font_raster_scale": 4,
-  "audio_format": "stereo 44100 Hz s16le",
-  "native_resolution": "480x272",
-  "visual_checks": [
-    "title",
-    "Pastille",
-    "original blue/red/brown hearts",
-    "accessories",
-    "settings English/Spanish"
-  ],
   "inline_symbols": 3,
-  "original_inline_graphics": 6,
+  "invalid_saves_rejected": true,
+  "passed": true,
   "performance": {
-    "settings_cache_different_pixels": 11396,
-    "settings_cache_mean_rgb_error": 0.6546109068627451,
-    "settings_cache_severe_pixels": 95,
-    "settings_navigation_ms_per_frame": 16.683333333333355,
+    "menu_return": {
+      "returns": 12,
+      "worst_mean_rgb_error": 0.0
+    },
+    "settings_cache_different_pixels": 0,
+    "settings_cache_mean_rgb_error": 0.0,
+    "settings_cache_severe_pixels": 0,
+    "settings_navigation_ms_per_frame": 16.68333333333333,
     "settings_navigation_scene_renders": 0,
     "settings_navigation_texture_loads": 0,
     "startup_fade_scene_renders": 0,
     "startup_fade_texture_loads": 0
   },
-  "scene_cache_resolution": "480x272",
-  "texture_cache_mib": 4,
-  "aligned_scene_cache_mib": 3,
-  "launcher_images": {
-    "ICON0.PNG": "144x80",
-    "PIC1.PNG": "480x272",
-    "source": "Original title logo and menu background",
-    "iso_verified": true,
-    "pbp_verified": true
-  },
-  "about_pages_verified": 11,
-  "original_translation_credits": 13,
-  "credit_lists": {
-    "testing": 13,
-    "special_thanks": 14,
-    "patrons": 16
-  },
+  "preferences_normalized": true,
+  "save_reload": true,
+  "semantic_backup_recovery": true,
+  "settings_overwrite": true,
   "skip_playback": {
     "cancel_immediate": true,
     "dialogues": 120,
-    "elapsed_seconds": 10.460267,
-    "frame_max_ms": 133.50600000000057,
-    "frame_p95_ms": 33.38300000000061,
-    "frames": 524,
+    "elapsed_seconds": 10.627344,
+    "frame_max_ms": 183.48600000000027,
+    "frame_p95_ms": 16.729000000001548,
+    "frames": 556,
     "inflate_ms": 0.0,
-    "load_ms": 1199.107999999986,
-    "mean_frame_ms": 19.962356870229012,
-    "prefix_renders": 11,
-    "scene_renders": 104,
-    "texture_loads": 169,
+    "load_ms": 1335.8930000000014,
+    "mean_frame_ms": 19.113938848920863,
+    "prefix_renders": 0,
+    "scene_renders": 0,
+    "texture_loads": 272,
     "unread_requires_release": true
   },
-  "native_tiles_verified": 570,
-  "skip_cold_start": {
-    "cancel_immediate": true,
-    "dialogues": 120,
-    "elapsed_seconds": 10.376277000000002,
-    "frame_max_ms": 133.49600000000095,
-    "frame_p95_ms": 33.38600000000014,
-    "frames": 525,
-    "inflate_ms": 0.0,
-    "load_ms": 1119.977999999997,
-    "mean_frame_ms": 19.76435238095238,
-    "prefix_renders": 10,
-    "scene_renders": 103,
-    "texture_loads": 158,
-    "unread_requires_release": true
+  "last_verified_date": "2026-10-29",
+  "base_revision": "7ebfb2bd3296594196c3e43989150a8851d620f0",
+  "includes_local_changes": true,
+  "emulator": "PPSSPP 1.20.4 Windows x64",
+  "emulated_model": "PSP-1000 / 32 MiB",
+  "physical_hardware_tested": false,
+  "toolchain": "rustc 1.101.0-nightly (282215592 2026-10-04)",
+  "heap_mib": 18,
+  "texture_cache_mib": 6,
+  "aligned_scene_cache_mib": 3,
+  "renderer": "Source-resolution GU sprites; Arc<str> filenames; fast clear; alternating display buffers; aligned RAM dissolve surfaces",
+  "native_resolution": "480x272",
+  "texture_source": "Full source resolution; transparent-margin crop; DXT5 with lossless RGBA fallback for complete mip chains",
+  "texture_recipe": "source-resolution-dxt5-rgba-tiles-248-gutter4-mips-2-v11",
+  "font_raster_scale": 4,
+  "audio_format": "stereo 44100 Hz s16le",
+  "quality_verification": {
+    "unique_tiles": 2567,
+    "mip_levels": 7701,
+    "iso_resources": 2600,
+    "worst_remaining_dxt5_mean_premultiplied_error": 11.883,
+    "error_scale": 255,
+    "lossless_tiles": 5,
+    "lossless_extra_bytes": 149184,
+    "all_iso_resources_sha256_compared": true
+  },
+  "host_tests": {
+    "engine_layout_without_assets": 11,
+    "desktop_binary": 22,
+    "library_default_features": 11,
+    "manual_benchmarks_ignored": 1,
+    "psp_audio_blocks": 7,
+    "psp_skip_gate": 4,
+    "psp_persistence": 3,
+    "python_pipeline_textures": 18
+  },
+  "visual_comparison": {
+    "PSP-SETTINGS-CACHED": {
+      "mean_rgb_error": 0.0,
+      "different_pixels": 0,
+      "max_channel_error": 0
+    },
+    "PSP-MENU-REFERENCE": {
+      "mean_rgb_error": 0.0,
+      "different_pixels": 0,
+      "max_channel_error": 0
+    },
+    "PSP-AFTER-SKIP": {
+      "mean_rgb_error": 0.0,
+      "different_pixels": 0,
+      "max_channel_error": 0
+    }
+  },
+  "performance_baseline_vulkan_1x": {
+    "navigation": {
+      "menu_return": {
+        "returns": 12,
+        "worst_mean_rgb_error": 0.0
+      },
+      "settings_cache_different_pixels": 0,
+      "settings_cache_mean_rgb_error": 0.0,
+      "settings_cache_severe_pixels": 0,
+      "settings_navigation_ms_per_frame": 16.68333333333333,
+      "settings_navigation_scene_renders": 0,
+      "settings_navigation_texture_loads": 0,
+      "startup_fade_scene_renders": 0,
+      "startup_fade_texture_loads": 0
+    },
+    "skip_playback": {
+      "cancel_immediate": true,
+      "dialogues": 120,
+      "elapsed_seconds": 10.858941,
+      "frame_max_ms": 183.5380000000004,
+      "frame_p95_ms": 20.865000000000578,
+      "frames": 545,
+      "inflate_ms": 0.0,
+      "load_ms": 1368.179,
+      "mean_frame_ms": 19.92467889908257,
+      "prefix_renders": 0,
+      "scene_renders": 0,
+      "texture_loads": 272,
+      "unread_requires_release": true
+    }
+  },
+  "backends_checked": [
+    {
+      "backend": "Vulkan",
+      "render_resolution": 3,
+      "full_audit": true,
+      "result": {
+        "accessory_screens": 8,
+        "audio_blocks": 1070,
+        "audio_open_recovery": true,
+        "bus_mhz": 166,
+        "cpu_mhz": 333,
+        "decisions": 2,
+        "dialogues": 4781,
+        "endings": 2,
+        "extras": 8,
+        "inline_symbols": 3,
+        "invalid_saves_rejected": true,
+        "passed": true,
+        "performance": {
+          "menu_return": {
+            "returns": 12,
+            "worst_mean_rgb_error": 0.0
+          },
+          "settings_cache_different_pixels": 0,
+          "settings_cache_mean_rgb_error": 0.0,
+          "settings_cache_severe_pixels": 0,
+          "settings_navigation_ms_per_frame": 16.683333333333323,
+          "settings_navigation_scene_renders": 0,
+          "settings_navigation_texture_loads": 0,
+          "startup_fade_scene_renders": 0,
+          "startup_fade_texture_loads": 0
+        },
+        "preferences_normalized": true,
+        "save_reload": true,
+        "semantic_backup_recovery": true,
+        "settings_overwrite": true,
+        "skip_playback": {
+          "cancel_immediate": true,
+          "dialogues": 120,
+          "elapsed_seconds": 10.743821999999998,
+          "frame_max_ms": 183.48600000000027,
+          "frame_p95_ms": 16.73100000000005,
+          "frames": 556,
+          "inflate_ms": 0.0,
+          "load_ms": 1448.2149999999883,
+          "mean_frame_ms": 19.323431654676263,
+          "prefix_renders": 0,
+          "scene_renders": 0,
+          "texture_loads": 295,
+          "unread_requires_release": true
+        }
+      }
+    },
+    {
+      "backend": "Vulkan",
+      "render_resolution": 1,
+      "performance_audit": true,
+      "result": {
+        "bus_mhz": 166,
+        "cpu_mhz": 333,
+        "navigation": {
+          "menu_return": {
+            "returns": 12,
+            "worst_mean_rgb_error": 0.0
+          },
+          "settings_cache_different_pixels": 0,
+          "settings_cache_mean_rgb_error": 0.0,
+          "settings_cache_severe_pixels": 0,
+          "settings_navigation_ms_per_frame": 16.68333333333333,
+          "settings_navigation_scene_renders": 0,
+          "settings_navigation_texture_loads": 0,
+          "startup_fade_scene_renders": 0,
+          "startup_fade_texture_loads": 0
+        },
+        "skip_playback": {
+          "cancel_immediate": true,
+          "dialogues": 120,
+          "elapsed_seconds": 10.627344,
+          "frame_max_ms": 183.48600000000027,
+          "frame_p95_ms": 16.729000000001548,
+          "frames": 556,
+          "inflate_ms": 0.0,
+          "load_ms": 1335.8930000000014,
+          "mean_frame_ms": 19.113938848920863,
+          "prefix_renders": 0,
+          "scene_renders": 0,
+          "texture_loads": 272,
+          "unread_requires_release": true
+        }
+      }
+    },
+    {
+      "backend": "OpenGL",
+      "render_resolution": 1,
+      "performance_audit": true,
+      "result": {
+        "bus_mhz": 166,
+        "cpu_mhz": 333,
+        "navigation": {
+          "menu_return": {
+            "returns": 12,
+            "worst_mean_rgb_error": 0.0
+          },
+          "settings_cache_different_pixels": 0,
+          "settings_cache_mean_rgb_error": 0.0,
+          "settings_cache_severe_pixels": 0,
+          "settings_navigation_ms_per_frame": 16.683324999999996,
+          "settings_navigation_scene_renders": 0,
+          "settings_navigation_texture_loads": 0,
+          "startup_fade_scene_renders": 0,
+          "startup_fade_texture_loads": 0
+        },
+        "skip_playback": {
+          "cancel_immediate": true,
+          "dialogues": 120,
+          "elapsed_seconds": 10.627353999999999,
+          "frame_max_ms": 183.48600000000027,
+          "frame_p95_ms": 16.729999999999023,
+          "frames": 556,
+          "inflate_ms": 0.0,
+          "load_ms": 1335.963000000011,
+          "mean_frame_ms": 19.113956834532374,
+          "prefix_renders": 0,
+          "scene_renders": 0,
+          "texture_loads": 272,
+          "unread_requires_release": true
+        }
+      }
+    }
+  ],
+  "normal_package_verified": true,
+  "artifact_sha256": {
+    "StarryFlowers.iso": "617b91809a873035540e523db3a9744ac822f98a17f4671f2cb0c027ee43a346",
+    "EBOOT.PBP": "0a0991d519ddf680637165ce430487d74929a91f7cdf847923b13538b20791a3"
+  },
+  "limitations": [
+    "No physical PSP testing",
+    "One baseline and one comparable updated Vulkan 1x performance measurement",
+    "Cold scene-load frame spikes remain around 183 ms in the tested trace",
+    "Audio output-error recovery and Memory Stick close failures not injected",
+    "PSP retains fewer languages and shorter rollback than PC"
+  ],
+  "repository": "https://github.com/enzocipher/Starry-Flowers-PSP",
+  "repository_separation": {
+    "date": "2026-10-29",
+    "previous_repository": "https://github.com/enzocipher/Starry-Flowers-but-in-Rust",
+    "native_sources_unchanged": true,
+    "independent_host_core": "starryflowers-psp-core",
+    "native_build_passed": true,
+    "native_audit": {
+      "accessory_screens": 8,
+      "audio_blocks": 1069,
+      "audio_open_recovery": true,
+      "bus_mhz": 166,
+      "cpu_mhz": 333,
+      "decisions": 2,
+      "dialogues": 4781,
+      "endings": 2,
+      "extras": 8,
+      "inline_symbols": 3,
+      "invalid_saves_rejected": true,
+      "passed": true,
+      "performance": {
+        "menu_return": {
+          "returns": 12,
+          "worst_mean_rgb_error": 0.0
+        },
+        "settings_cache_different_pixels": 0,
+        "settings_cache_mean_rgb_error": 0.0,
+        "settings_cache_severe_pixels": 0,
+        "settings_navigation_ms_per_frame": 16.683333333333323,
+        "settings_navigation_scene_renders": 0,
+        "settings_navigation_texture_loads": 0,
+        "startup_fade_scene_renders": 0,
+        "startup_fade_texture_loads": 0
+      },
+      "preferences_normalized": true,
+      "save_reload": true,
+      "semantic_backup_recovery": true,
+      "settings_overwrite": true,
+      "skip_playback": {
+        "cancel_immediate": true,
+        "dialogues": 120,
+        "elapsed_seconds": 10.744454,
+        "frame_max_ms": 183.485000000001,
+        "frame_p95_ms": 16.729999999999023,
+        "frames": 556,
+        "inflate_ms": 0.0,
+        "load_ms": 1448.3599999999697,
+        "mean_frame_ms": 19.32456654676259,
+        "prefix_renders": 0,
+        "scene_renders": 0,
+        "texture_loads": 295,
+        "unread_requires_release": true
+      }
+    },
+    "shared_source_sha256": {
+      "src/engine.rs": "eaf0a232306e0c98389c0d094742fa960c552bf6a7a596d451f54758884e8c5f",
+      "src/layout.rs": "05cf5628574545449cd1f8d0e6b06df1b3b937f211c2b26c4112e3a30ff57837",
+      "story.json": "e77bed2613fc05c54a114c893680105cf8057b70ce706f1ee14471e0e5415d8c"
+    }
   }
 }

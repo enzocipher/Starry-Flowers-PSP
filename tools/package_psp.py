@@ -8,6 +8,7 @@ import tempfile
 import struct
 from PIL import Image
 import pycdlib
+from psp_pipeline import find_matching_pbp, validate_manifest
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -17,9 +18,14 @@ args = parser.parse_args()
 if args.performance_audit: args.audit = True
 binary = ROOT / "psp/target/mipsel-sony-psp/release"
 dist = ROOT / "psp/dist"
+manifest = json.loads((dist / "DATA/MANIFEST.JSON").read_text(encoding="utf-8"))
+validate_manifest(manifest, dist / "DATA")
 prx = binary / "starryflowers-psp.prx"
-pbp = max(binary.glob("*EBOOT.PBP"), key=lambda p: p.stat().st_mtime)
-if not prx.exists() or not pbp.exists(): raise SystemExit("Build with cargo +nightly psp --release first")
+pbp_candidates = list(binary.glob("*EBOOT.PBP")) if binary.exists() else []
+if not prx.is_file(): raise SystemExit(f"No existe el ejecutable nativo {prx}. Compila con cargo +nightly psp --release primero.")
+if not pbp_candidates: raise SystemExit(f"No se encontró ningún *EBOOT.PBP en {binary}. Compila con cargo +nightly psp --release primero.")
+pbp = find_matching_pbp(pbp_candidates, prx.read_bytes())
+if pbp is None: raise SystemExit(f"Ningún EBOOT.PBP contiene el DATA.PSP idéntico a {prx.name}; vuelve a compilar con cargo +nightly psp --release.")
 # Use the original title art for the PSP launcher, without generated artwork.
 def launcher_picture(size):
     bg = Image.open(ROOT / "assets/gui/main_menu.png").convert("RGBA").resize(size, Image.Resampling.LANCZOS)
@@ -36,7 +42,6 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run(["mksfo", "--bare", "-s", "TITLE=Starry Flowers", "-s", "CATEGORY=UG", "-s", "DISC_ID=SFWR00001", "-s", "DISC_VERSION=1.00", "-s", "PSP_SYSTEM_VER=1.00", "-d", "BOOTABLE=1", "-d", "PARENTAL_LEVEL=1", "Starry Flowers", str(sfo)], check=True)
     # Preserve executable/PSAR sections while replacing metadata and launcher art.
     packed = pbp.read_bytes()
-    if packed[:4] != b"\x00PBP": raise RuntimeError("Invalid source EBOOT.PBP")
     offsets = list(struct.unpack_from("<8I", packed, 8)) + [len(packed)]
     sections = [packed[offsets[n]:offsets[n+1]] for n in range(8)]
     sections[0] = sfo.read_bytes()
@@ -56,9 +61,8 @@ with tempfile.TemporaryDirectory() as tmp:
     add(sfo, "/PSP_GAME/PARAM.SFO")
     add(dist / "ICON0.PNG", "/PSP_GAME/ICON0.PNG")
     add(dist / "PIC1.PNG", "/PSP_GAME/PIC1.PNG")
-    active = set(json.loads((dist / "DATA/MANIFEST.JSON").read_text(encoding="utf-8"))["files"])
-    for source in sorted((dist / "DATA").iterdir()):
-        if source.is_file() and source.name in active: add(source, "/PSP_GAME/USRDIR/DATA/" + source.name)
+    for name in sorted(manifest["files"]):
+        add(dist / "DATA" / name, "/PSP_GAME/USRDIR/DATA/" + name)
     umd = tmp / "UMD_DATA.BIN"
     umd.write_bytes(b"SFWR00001|0001|G")
     add(umd, "/UMD_DATA.BIN")

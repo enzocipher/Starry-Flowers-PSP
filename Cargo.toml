@@ -1,13 +1,12 @@
 [package]
-name = "starryflowers-rust"
+name = "starryflowers-psp-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["original-assets"]
+original-assets = []
+
 [dependencies]
-macroquad = { version = "0.4.16", features = ["audio"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-
-[profile.release]
-lto = true
-strip = true

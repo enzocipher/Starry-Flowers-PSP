@@ -8,6 +8,8 @@ use crate::{
 use alloc::{format, vec};
 
 pub fn run(renderer: &mut Renderer, story: &Story) -> serde_json::Value {
+    persistence_regression(story);
+    audio_recovery_regression();
     let mut lines = 0usize;
     let mut symbols_seen = vec![];
     let mut decisions = 0usize;
@@ -130,10 +132,97 @@ pub fn run(renderer: &mut Renderer, story: &Story) -> serde_json::Value {
     );
     renderer.present(0);
     screenshot(renderer, "PSP-AUDIT-PASSED");
-    serde_json::json!({"passed":true,"dialogues":lines,"endings":finishes,"extras":extras,"decisions":decisions,"accessory_screens":outfits,"save_reload":true,"settings_overwrite":true,"inline_symbols":symbols_seen.len(),"performance":perf,"skip_playback":skip_perf})
+    serde_json::json!({"passed":true,"dialogues":lines,"endings":finishes,"extras":extras,"decisions":decisions,"accessory_screens":outfits,"save_reload":true,"settings_overwrite":true,"invalid_saves_rejected":true,"semantic_backup_recovery":true,"preferences_normalized":true,"audio_open_recovery":true,"inline_symbols":symbols_seen.len(),"performance":perf,"skip_playback":skip_perf,
+        "cpu_mhz":unsafe { psp::sys::scePowerGetCpuClockFrequencyInt() },
+        "bus_mhz":unsafe { psp::sys::scePowerGetBusClockFrequencyInt() }})
+}
+
+fn audio_recovery_regression() {
+    let root = crate::io::save_dir();
+    let data_dir = alloc::format!("{root}/DATA");
+    crate::io::mkdir(&data_dir);
+    let source = alloc::format!("{data_dir}/AUDIT-RECOVERY.PCM");
+    crate::io::remove(&source);
+    let mut files = alloc::collections::BTreeMap::new();
+    files.insert("test".into(), "AUDIT-RECOVERY.PCM".into());
+    let audio = crate::audio::Audio::new(&root, &files, true);
+    audio.update("AUDIT-RECOVERY.PCM", 0., false);
+    unsafe {
+        psp::sys::sceKernelDelayThread(600_000);
+    }
+    assert_eq!(audio.blocks(), 0);
+    crate::io::write(&source, &[0; 4096]).unwrap();
+    let deadline = crate::now() + 2.;
+    while audio.blocks() == 0 && crate::now() < deadline {
+        unsafe {
+            psp::sys::sceKernelDelayThread(10_000);
+        }
+    }
+    assert!(audio.blocks() > 0, "Music did not retry a failed open");
+    audio.update("", 0., false);
+    unsafe {
+        psp::sys::sceKernelDelayThread(50_000);
+    }
+    crate::io::remove(&source);
+}
+
+fn persistence_regression(story: &Story) {
+    let mut prefs = Prefs {
+        lang: "invalid".into(),
+        cps: -50.,
+        delay: 100.,
+        music: -1.,
+        sound: 3.,
+        fave: [usize::MAX; 3],
+        read: vec![12, 3, 12, story.ops.len() + 1],
+        ..Default::default()
+    };
+    prefs.normalize(story);
+    assert!(prefs.lang.is_empty());
+    assert_eq!(
+        (prefs.cps, prefs.delay, prefs.music, prefs.sound),
+        (0., 30., 0., 1.)
+    );
+    assert_eq!(prefs.fave, [0; 3]);
+    assert_eq!(prefs.read, vec![3, 12]);
+    assert!(!prefs.mark_read(12));
+    assert!(prefs.mark_read(7));
+    assert_eq!(prefs.read, vec![3, 7, 12]);
+    let mut state = State::default();
+    state.start(story, "start");
+    state.run(story);
+    assert!(crate::valid_save(story, &state));
+    let valid = state.clone();
+    state.acc[1] = usize::MAX;
+    assert!(!crate::valid_save(story, &state));
+    assert!(save("AUDIT-INVALID", &state));
+    assert!(
+        crate::load_checked::<State>("AUDIT-INVALID", |s| crate::valid_save(story, s)).is_none()
+    );
+    // A valid backup must be considered even when primary JSON parses correctly.
+    let backup = alloc::format!("{}/AUDIT-INVALID.JSON.BAK", crate::io::save_dir());
+    crate::io::write(&backup, &serde_json::to_vec(&valid).unwrap()).unwrap();
+    assert_eq!(
+        crate::load_checked::<State>("AUDIT-INVALID", |s| crate::valid_save(story, s))
+            .unwrap()
+            .pc,
+        valid.pc
+    );
+    crate::io::remove(&backup);
+    state = valid.clone();
+    state.fave[2] = usize::MAX;
+    assert!(!crate::valid_save(story, &state));
+    state = valid.clone();
+    state.stack.push(story.ops.len() + 1);
+    assert!(!crate::valid_save(story, &state));
+    state = valid;
+    state.pc = 0;
+    assert!(!crate::valid_save(story, &state));
 }
 
 pub fn performance(renderer: &mut Renderer, story: &Story) -> serde_json::Value {
+    transition_regression(renderer);
+    let menu_return = menu_return_regression(renderer, story);
     let mut preview = Prefs::default();
     preview.lang = "es".into();
     preview.mute = true;
@@ -233,7 +322,116 @@ pub fn performance(renderer: &mut Renderer, story: &Story) -> serde_json::Value 
         "Startup fade reloaded the scene"
     );
     screenshot(renderer, "PSP-STARTUP-FINAL");
-    serde_json::json!({"settings_cache_different_pixels":differences,"settings_cache_mean_rgb_error":mean_error,"settings_cache_severe_pixels":severe,"startup_fade_texture_loads":startup_after.0-startup_before.0,"startup_fade_scene_renders":startup_after.1-startup_before.1,"settings_navigation_ms_per_frame":navigation_ms,"settings_navigation_texture_loads":after.0-before.0,"settings_navigation_scene_renders":after.1-before.1})
+    serde_json::json!({"menu_return":menu_return,"settings_cache_different_pixels":differences,"settings_cache_mean_rgb_error":mean_error,"settings_cache_severe_pixels":severe,"startup_fade_texture_loads":startup_after.0-startup_before.0,"startup_fade_scene_renders":startup_after.1-startup_before.1,"settings_navigation_ms_per_frame":navigation_ms,"settings_navigation_texture_loads":after.0-before.0,"settings_navigation_scene_renders":after.1-before.1})
+}
+
+fn transition_regression(renderer: &mut Renderer) {
+    // Valid game-to-game fades must survive the menu-contamination fix, including empty scenes.
+    renderer.frame.fill(0xff604020);
+    renderer.frame.origin = Some(renderer.frame.signature(0));
+    let old = renderer.frame.clone();
+    let reference = renderer.pixels();
+    renderer.frame.fill(0xff2060a0);
+    renderer.frame.origin = Some(renderer.frame.signature(0));
+    let next = renderer.frame.clone();
+    renderer.frame.fade_from(&old, 0);
+    let faded = renderer.pixels();
+    assert!(
+        reference
+            .iter()
+            .zip(&faded)
+            .all(|(a, b)| a & 0xffffff == b & 0xffffff),
+        "Game fade lost its source scene"
+    );
+    renderer.frame.clone_from(&next);
+    renderer.frame.fade_from(&old, 128);
+    let middle = renderer.pixels();
+    for pixel in &middle {
+        for (shift, expected) in [(0, 96i32), (8, 80), (16, 64)] {
+            assert!(
+                (((*pixel >> shift) & 255) as i32 - expected).abs() <= 2,
+                "Game fade did not blend both scenes"
+            );
+        }
+    }
+    renderer.frame.clone_from(&next);
+    let complete = renderer.pixels();
+    assert!(
+        complete.iter().all(|p| p & 0xffffff == 0x2060a0),
+        "Game fade did not finish"
+    );
+    renderer.frame.origin = Some(next.origin.unwrap().wrapping_add(1));
+    let repeated = renderer.frame.clone();
+    renderer.frame.fade_from(&next, 0);
+    let unchanged = renderer.pixels();
+    assert!(
+        unchanged.iter().all(|p| p & 0xffffff == 0x2060a0),
+        "Unchanged dialogue replayed an obsolete fade"
+    );
+    renderer.frame.fill(0xff404040);
+    renderer.frame.origin = Some(renderer.frame.signature(0));
+    renderer.frame.fade_from(&repeated, 0);
+    let following = renderer.pixels();
+    assert!(
+        following.iter().all(|p| p & 0xffffff == 0x2060a0),
+        "Cached dialogue lost transition provenance"
+    );
+}
+
+fn menu_return_regression(renderer: &mut Renderer, story: &Story) -> serde_json::Value {
+    let mut state = State::default();
+    state.start(story, "start");
+    for _ in 0..200 {
+        if state.run(story) == Stop::Say && state.who == "w" {
+            break;
+        }
+    }
+    assert_eq!(state.who, "w");
+    renderer.scene(&state, story);
+    let base = renderer.frame.clone();
+    renderer.dialogue(&state, story, "", usize::MAX);
+    let game = renderer.frame.clone();
+    let reference = renderer.pixels();
+    screenshot(renderer, "PSP-MENU-REFERENCE");
+    let mut worst_error = 0f64;
+    for iteration in 0..12 {
+        let mut prefs = Prefs::default();
+        if iteration % 2 == 1 {
+            prefs.lang = "es".into();
+        }
+        crate::settings_scene(renderer, story, &prefs, iteration % 10);
+        renderer.present(1);
+        renderer.frame.clone_from(&game);
+        // The main loop may still request a fade after returning or cancelling skip.
+        renderer.frame.fade_from(&base, 0);
+        let returned = renderer.pixels();
+        let error: usize = reference
+            .iter()
+            .zip(&returned)
+            .map(|(a, b)| {
+                [0, 8, 16]
+                    .iter()
+                    .map(|shift| {
+                        (((*a >> shift) & 255) as i32 - ((*b >> shift) & 255) as i32).unsigned_abs()
+                            as usize
+                    })
+                    .sum::<usize>()
+            })
+            .sum();
+        let mean_error = error as f64 / (480. * 272. * 3.);
+        worst_error = worst_error.max(mean_error);
+        save(
+            "MENU-RETURN",
+            &serde_json::json!({"iteration":iteration,"mean_rgb_error":mean_error}),
+        );
+        if iteration == 0 {
+            screenshot(renderer, "PSP-MENU-RETURN");
+        }
+        assert!(mean_error < 2., "Settings background leaked into gameplay");
+        renderer.frame.clone_from(&game);
+        renderer.present(1);
+    }
+    serde_json::json!({"returns":12,"worst_mean_rgb_error":worst_error})
 }
 
 pub fn skip_playback(renderer: &mut Renderer, story: &Story) -> serde_json::Value {
@@ -288,10 +486,20 @@ pub fn skip_playback(renderer: &mut Renderer, story: &Story) -> serde_json::Valu
         }
         durations.push((crate::now() - frame_started) * 1000.);
         frames += 1;
+        if frames % 60 == 0 {
+            save(
+                "SKIP-PROGRESS",
+                &serde_json::json!({"frames":frames,"dialogues":dialogues,"elapsed":crate::now()-began,"loads":renderer.stats().0-before.0}),
+            );
+        }
     }
     durations.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let after = renderer.stats();
     let load_after = renderer.load_stats();
+    save(
+        "SKIP-METRICS",
+        &serde_json::json!({"frames":frames,"dialogues":dialogues,"mean_ms":(crate::now()-began)*1000./frames as f64,"p95_ms":durations[durations.len()*95/100],"loads":after.0-before.0}),
+    );
     assert!(
         (crate::now() - began) * 1000. / (frames as f64) < 40.,
         "Skip stalls rendering"

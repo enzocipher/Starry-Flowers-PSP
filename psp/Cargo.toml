@@ -5,7 +5,7 @@ edition = "2021"
 build = "build.rs"
 [dependencies]
 psp = "0.3.14"
-serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
+serde = { version = "1", default-features = false, features = ["derive", "alloc", "rc"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 [profile.release]
 lto = true

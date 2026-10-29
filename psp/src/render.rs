@@ -3,6 +3,7 @@ use alloc::collections::BTreeMap as HashMap;
 use alloc::{
     format,
     string::{String, ToString},
+    sync::Arc,
     vec,
     vec::Vec,
 };
@@ -16,13 +17,15 @@ pub const BLUE: u32 = 0xffffa358;
 
 #[derive(Clone, Deserialize)]
 pub struct Tile {
-    pub file: String,
+    pub file: Arc<str>,
     pub x: usize,
     pub y: usize,
     pub width: usize,
     pub height: usize,
     pub texture_width: usize,
     pub texture_height: usize,
+    #[serde(default)]
+    pub dxt5: bool,
 }
 #[derive(Clone, Deserialize)]
 pub struct ImageInfo {
@@ -38,7 +41,7 @@ pub struct ImageInfo {
 }
 #[derive(Deserialize)]
 pub struct Glyph {
-    pub file: String,
+    pub file: Arc<str>,
     pub x: usize,
     pub y: usize,
     pub width: usize,
@@ -66,6 +69,13 @@ pub struct Renderer {
     root: String,
     gpu: crate::gpu::Gpu,
     last_buffer: usize,
+    wraps: Vec<Wrapped>,
+}
+struct Wrapped {
+    text: String,
+    size: usize,
+    width: u32,
+    lines: Arc<Vec<crate::layout::Line>>,
 }
 impl Renderer {
     pub fn new(root: &str) -> Self {
@@ -79,6 +89,7 @@ impl Renderer {
             root: root.into(),
             gpu: crate::gpu::Gpu::new(),
             last_buffer: 0,
+            wraps: Vec::new(),
         }
     }
     pub fn image(
@@ -128,6 +139,7 @@ impl Renderer {
                 tw: t.texture_width,
                 th: t.texture_height,
                 font: false,
+                dxt5: t.dxt5,
                 xy: [
                     x + left as f32 * sx,
                     y + t.y as f32 * sy,
@@ -151,10 +163,11 @@ impl Renderer {
     }
     pub fn rect(&mut self, x: i32, y: i32, w: usize, h: usize, color: u32) {
         self.frame.draws.push(crate::gpu::Draw {
-            file: String::new(),
+            file: "".into(),
             tw: 0,
             th: 0,
             font: false,
+            dxt5: false,
             xy: [
                 x as f32,
                 y as f32,
@@ -167,24 +180,53 @@ impl Renderer {
     }
     pub fn width(&self, text: &str, size: usize) -> f32 {
         let font = &self.manifest.fonts[&size.to_string()];
-        text.chars()
-            .map(|c| {
-                self.manifest
-                    .inline_symbols
+        text.chars().map(|c| self.advance(font, c, size)).sum()
+    }
+    fn advance(&self, font: &Font, c: char, size: usize) -> f32 {
+        if c == '\u{fe0f}' {
+            return 0.;
+        }
+        self.manifest
+            .inline_symbols
+            .get(&c)
+            .map(|symbol| symbol.advance * size as f32)
+            .unwrap_or_else(|| {
+                font.glyphs
                     .get(&c)
-                    .map(|symbol| symbol.advance * size as f32)
-                    .unwrap_or_else(|| {
-                        font.glyphs
-                            .get(&c)
-                            .map(|g| g.advance)
-                            .unwrap_or(size as f32 * 0.5)
-                    })
+                    .map(|g| g.advance)
+                    .unwrap_or(size as f32 * 0.5)
             })
-            .sum()
+    }
+    fn wrapped(&mut self, text: &str, width: f32, size: usize) -> Arc<Vec<crate::layout::Line>> {
+        if let Some(index) = self
+            .wraps
+            .iter()
+            .position(|w| w.text == text && w.width == width.to_bits() && w.size == size)
+        {
+            let hit = self.wraps.remove(index);
+            let lines = hit.lines.clone();
+            self.wraps.push(hit);
+            return lines;
+        }
+        let font = &self.manifest.fonts[&size.to_string()];
+        let lines = Arc::new(crate::layout::wrap_advances(text, width, |c| {
+            self.advance(font, c, size)
+        }));
+        if self.wraps.len() == 16 {
+            self.wraps.remove(0);
+        }
+        self.wraps.push(Wrapped {
+            text: text.into(),
+            size,
+            width: width.to_bits(),
+            lines: lines.clone(),
+        });
+        lines
     }
     pub fn text(&mut self, text: &str, x: i32, y: i32, size: usize, color: u32) {
-        let scale = self.manifest.fonts[&size.to_string()].scale;
-        let ascent = self.manifest.fonts[&size.to_string()].ascent;
+        let font_key = size.to_string();
+        let scale = self.manifest.fonts[&font_key].scale;
+        let ascent = self.manifest.fonts[&font_key].ascent;
         let mut cursor = x as f32;
         for c in text.chars() {
             if c == '\u{fe0f}' {
@@ -210,7 +252,7 @@ impl Renderer {
                 cursor += symbol.advance * size as f32;
                 continue;
             }
-            let Some(g) = self.manifest.fonts[&size.to_string()].glyphs.get(&c) else {
+            let Some(g) = self.manifest.fonts[&font_key].glyphs.get(&c) else {
                 cursor += size as f32 * 0.5;
                 continue;
             };
@@ -221,6 +263,7 @@ impl Renderer {
                 tw: 512,
                 th: 512,
                 font: true,
+                dxt5: false,
                 xy: [
                     left,
                     top,
@@ -253,11 +296,29 @@ impl Renderer {
         }
     }
     pub fn label(&mut self, text: &str, x: i32, y: i32, width: f32, size: usize, color: u32) {
+        if width <= 0. {
+            return;
+        }
         let size = [size, 10, 8]
             .into_iter()
             .find(|s| self.width(text, *s) <= width)
             .unwrap_or(8);
+        let start = self.frame.draws.len();
         self.text(text, x, y, size, color);
+        // Glyph bearings can exceed the advance; fit actual ink as well as spacing.
+        let mut left = x as f32;
+        let mut right = x as f32 + self.width(text, size);
+        for d in &self.frame.draws[start..] {
+            left = left.min(d.xy[0]);
+            right = right.max(d.xy[2]);
+        }
+        let scale = (width / (right - left).max(1.)).min(1.);
+        for d in &mut self.frame.draws[start..] {
+            d.xy[0] = x as f32 + (d.xy[0] - left) * scale;
+            d.xy[2] = x as f32 + (d.xy[2] - left) * scale;
+            d.xy[1] = y as f32 + (d.xy[1] - y as f32) * scale;
+            d.xy[3] = y as f32 + (d.xy[3] - y as f32) * scale;
+        }
     }
     pub fn name(&mut self, who: &str, text: &str, x: i32, y: i32) {
         let (outer, inner) = match who {
@@ -296,20 +357,24 @@ impl Renderer {
         let text = clean_text(text);
         let (size, lines) = [12, 10]
             .into_iter()
-            .map(|size| {
-                (
-                    size,
-                    crate::layout::wrap(&text, width, |s| self.width(s, size)),
-                )
-            })
+            .map(|size| (size, self.wrapped(&text, width, size)))
             .find(|(s, l)| l.len() * (s * 14 / 10) <= height)
-            .unwrap_or_else(|| (10, crate::layout::wrap(&text, width, |s| self.width(s, 10))));
+            .unwrap_or_else(|| (10, self.wrapped(&text, width, 10)));
         for (i, line) in lines.iter().enumerate() {
             let n = revealed
                 .saturating_sub(line.start)
                 .min(line.end - line.start);
+            let end = if n == line.end - line.start {
+                line.text.len()
+            } else {
+                line.text
+                    .char_indices()
+                    .nth(n)
+                    .map(|(byte, _)| byte)
+                    .unwrap_or(line.text.len())
+            };
             self.text(
-                &line.text.chars().take(n).collect::<String>(),
+                &line.text[..end],
                 x,
                 y + (i * size * 14 / 10) as i32,
                 size,
@@ -398,6 +463,13 @@ impl Renderer {
             }
         }
         self.frame.scene_len = self.frame.draws.len();
+        // Distinguish successive lines even when their backgrounds/portraits are identical.
+        self.frame.origin = Some(
+            self.frame
+                .signature(self.frame.scene_len)
+                .wrapping_mul(1099511628211)
+                .wrapping_add(state.pc as u64),
+        );
     }
     pub fn dialogue(&mut self, state: &State, story: &Story, lang: &str, revealed: usize) {
         // Textbox height and portrait change per line; never include them in the stable prefix.
@@ -431,7 +503,7 @@ impl Renderer {
             self.flow(&text, 48, 105, 384., 150, revealed, WHITE);
             return;
         }
-        let lines = crate::layout::wrap(&clean_text(&text), 260., |s| self.width(s, 12));
+        let lines = self.wrapped(&clean_text(&text), 260., 12);
         let height = (lines.len() * 17 + 36).clamp(75, 140);
         let top = 270 - height as i32;
         self.image(
@@ -492,8 +564,9 @@ impl Renderer {
     }
     pub fn present(&mut self, buffer: usize) {
         let _ = buffer;
-        self.gpu.present(&self.frame, &self.root, 1);
-        self.last_buffer = 1;
+        let next = 1 - self.last_buffer;
+        self.gpu.present(&self.frame, &self.root, next);
+        self.last_buffer = next;
     }
     pub fn pixels(&mut self) -> Vec<u32> {
         self.present(self.last_buffer);

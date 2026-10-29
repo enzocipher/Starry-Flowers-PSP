@@ -29,11 +29,22 @@ impl File {
             sys::sceIoLseek(self.0, 0, IoWhence::Set);
         }
     }
+    pub fn close(mut self) -> Result<(), i32> {
+        let result = unsafe { sys::sceIoClose(self.0) };
+        self.0 = sys::SceUid(-1);
+        if result < 0 {
+            Err(result)
+        } else {
+            Ok(())
+        }
+    }
 }
 impl Drop for File {
     fn drop(&mut self) {
-        unsafe {
-            sys::sceIoClose(self.0);
+        if self.0 .0 >= 0 {
+            unsafe {
+                sys::sceIoClose(self.0);
+            }
         }
     }
 }
@@ -85,7 +96,7 @@ pub fn write(name: &str, data: &[u8]) -> Result<(), i32> {
         }
         done += n as usize;
     }
-    Ok(())
+    f.close()
 }
 pub fn rename(old: &str, new: &str) -> bool {
     let a = path(old);

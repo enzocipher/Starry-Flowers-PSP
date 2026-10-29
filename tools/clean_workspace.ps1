@@ -3,7 +3,7 @@ param()
 $ErrorActionPreference = 'Stop'
 $taskRoot = (Resolve-Path -LiteralPath (Split-Path -Parent $PSScriptRoot)).Path
 $taskPrefix = $taskRoot + [IO.Path]::DirectorySeparatorChar
-$taskFolders = @('target-final', 'target', 'psp/target', 'psp/test-emulator', 'assets/gui/credits')
+$taskFolders = @('target', 'psp/target', 'psp/test-emulator')
 $taskTargets = @()
 foreach ($taskRelative in $taskFolders) {
     $taskCandidate = Join-Path $taskRoot $taskRelative
@@ -13,9 +13,7 @@ foreach ($taskRelative in $taskFolders) {
         $taskTargets += $taskItem
     }
 }
-$taskTargets += @(Get-ChildItem -LiteralPath $taskRoot -File -Filter 'smoke*.png')
-$taskTargets += @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'dist/StarryFlowersRust') -File -Filter 'smoke*.png' -ErrorAction SilentlyContinue)
-$taskTargets += @(Get-Item -LiteralPath (Join-Path $taskRoot 'layout-audit.txt'), (Join-Path $taskRoot 'psp/build.log') -ErrorAction SilentlyContinue)
+$taskTargets += @(Get-Item -LiteralPath (Join-Path $taskRoot 'psp/build.log') -ErrorAction SilentlyContinue)
 $taskKeep = @('StarryFlowers.iso', 'EBOOT.PBP', 'ICON0.PNG', 'PIC1.PNG')
 $taskTargets += @(Get-ChildItem -LiteralPath (Join-Path $taskRoot 'psp/dist') -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin $taskKeep })
 $taskManifest = Join-Path $taskRoot 'psp/dist/DATA/MANIFEST.JSON'

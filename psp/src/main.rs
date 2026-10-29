@@ -18,8 +18,10 @@ mod layout {
     include!(concat!(env!("OUT_DIR"), "/layout.rs"));
 }
 mod audio;
+mod audio_blocks;
 mod audit;
 mod io;
+mod persistence;
 mod playback;
 use audio::Audio;
 mod gpu;
@@ -71,6 +73,60 @@ impl Default for Prefs {
         }
     }
 }
+impl Prefs {
+    fn normalize(&mut self, story: &Story) {
+        if self.lang != "es" {
+            self.lang.clear();
+        }
+        self.cps = if self.cps.is_finite() {
+            self.cps.clamp(0., 200.)
+        } else {
+            60.
+        };
+        self.delay = if self.delay.is_finite() {
+            self.delay.clamp(0., 30.)
+        } else {
+            15.
+        };
+        self.music = if self.music.is_finite() {
+            self.music.clamp(0., 1.)
+        } else {
+            0.8
+        };
+        self.sound = if self.sound.is_finite() {
+            self.sound.clamp(0., 1.)
+        } else {
+            1.
+        };
+        persistence::normalize_indices(&mut self.fave, accessory_counts(story));
+        self.read.retain(|pc| *pc > 0 && *pc <= story.ops.len());
+        self.read.sort_unstable();
+        self.read.dedup();
+    }
+    fn mark_read(&mut self, pc: usize) -> bool {
+        match self.read.binary_search(&pc) {
+            Ok(_) => false,
+            Err(index) => {
+                self.read.insert(index, pc);
+                true
+            }
+        }
+    }
+}
+fn accessory_counts(story: &Story) -> [usize; 3] {
+    core::array::from_fn(|i| story.accessories.get(i).map_or(0, Vec::len))
+}
+fn valid_save(story: &Story, state: &State) -> bool {
+    state.pc > 0
+        && state.pc <= story.ops.len()
+        && state.stack.iter().all(|pc| *pc <= story.ops.len())
+        && persistence::valid_indices(&state.acc, accessory_counts(story))
+        && persistence::valid_indices(&state.fave, accessory_counts(story))
+        && matches!(
+            story.ops[state.pc - 1].op.as_str(),
+            "say" | "menu" | "dress" | "pause"
+        )
+}
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
     Title,
@@ -87,14 +143,22 @@ fn now() -> f64 {
     unsafe { sys::sceKernelGetSystemTimeWide() as f64 / 1_000_000. }
 }
 fn load<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
+    load_checked(name, |_| true)
+}
+fn load_checked<T: serde::de::DeserializeOwned>(
+    name: &str,
+    valid: impl Fn(&T) -> bool,
+) -> Option<T> {
     let path = format!("ms0:/PSP/SAVEDATA/STARRYFLOWERS/{name}.JSON");
     io::read(&path)
         .ok()
         .and_then(|data| serde_json::from_slice(&data).ok())
+        .filter(&valid)
         .or_else(|| {
             io::read(format!("{path}.BAK"))
                 .ok()
                 .and_then(|data| serde_json::from_slice(&data).ok())
+                .filter(&valid)
         })
 }
 fn save<T: Serialize>(name: &str, value: &T) -> bool {
@@ -166,7 +230,7 @@ fn about_scene(r: &mut Renderer, story: &Story, lang: &str, index: usize) {
             INK,
         );
     }
-    r.text(
+    r.label(
         &format!(
             "{} / {}   Left/Right: page   X: next   O: back",
             index + 1,
@@ -174,6 +238,7 @@ fn about_scene(r: &mut Renderer, story: &Story, lang: &str, index: usize) {
         ),
         110,
         251,
+        352.,
         10,
         INK,
     );
@@ -181,25 +246,27 @@ fn about_scene(r: &mut Renderer, story: &Story, lang: &str, index: usize) {
 fn settings_scene(r: &mut Renderer, story: &Story, p: &Prefs, selected: usize) {
     r.frame.fill(WHITE);
     r.image("ui game_menu", 0, 0, Some((W, H)), 255, false);
+    // The PC art reserves a left navigation column; PSP uses one continuous panel.
+    r.rect(28, 36, 424, 208, WHITE);
     // Cache only the static background; controls remain responsive overlays.
     r.frame.scene_len = r.frame.draws.len();
     r.frame.prefix_sealed = true;
     let tr = |s: &str| story.translate(s, &p.lang);
-    r.text(&tr("Options"), 22, 12, 18, BLUE);
-    r.text(&tr("Display"), 110, 39, 12, BLUE);
-    r.text(&tr("Skip"), 292, 39, 12, BLUE);
+    r.text(&tr("Options"), 44, 42, 18, BLUE);
+    r.text(&tr("Display"), 44, 70, 12, BLUE);
+    r.text(&tr("Skip"), 254, 70, 12, BLUE);
     if selected == 0 {
-        r.rect(106, 59, 166, 19, 0x33ffa358);
+        r.rect(40, 90, 198, 19, 0x33ffa358);
     }
     r.image(
         "ui button/radio_selected_foreground",
-        110,
-        61,
+        44,
+        92,
         Some((10, 14)),
         255,
         false,
     );
-    r.text(
+    r.label(
         &format!(
             "{}: {}",
             tr("Language"),
@@ -209,19 +276,20 @@ fn settings_scene(r: &mut Renderer, story: &Story, p: &Prefs, selected: usize) {
                 "Español"
             }
         ),
-        125,
-        61,
+        59,
+        92,
+        179.,
         12,
         if selected == 0 { BLUE } else { INK },
     );
     for (index, label, on, y) in [
-        (5, "Unseen Text", p.unseen, 61),
-        (6, "After Choices", p.after_choices, 82),
-        (7, "Transitions", p.transitions, 103),
-        (8, "Mute All", p.mute, 221),
+        (5, "Unseen Text", p.unseen, 92),
+        (6, "After Choices", p.after_choices, 113),
+        (7, "Transitions", p.transitions, 134),
+        (8, "Mute All", p.mute, 229),
     ] {
         if selected == index {
-            r.rect(288, y - 2, 170, 19, 0x33ffa358);
+            r.rect(250, y - 2, 194, 17, 0x33ffa358);
         }
         r.image(
             if on {
@@ -229,7 +297,7 @@ fn settings_scene(r: &mut Renderer, story: &Story, p: &Prefs, selected: usize) {
             } else {
                 "ui button/check_foreground"
             },
-            292,
+            254,
             y,
             Some((10, 14)),
             255,
@@ -237,9 +305,9 @@ fn settings_scene(r: &mut Renderer, story: &Story, p: &Prefs, selected: usize) {
         );
         r.label(
             &tr(label),
-            307,
+            269,
             y,
-            150.,
+            171.,
             12,
             if selected == index { BLUE } else { INK },
         );
@@ -254,51 +322,55 @@ fn settings_scene(r: &mut Renderer, story: &Story, p: &Prefs, selected: usize) {
                 format!("{:.0}", p.cps)
             },
             if p.cps == 0. { 1. } else { p.cps / 200. },
-            110,
-            133,
+            44,
+            148,
         ),
         (
             2,
             "Auto-Forward Time",
             format!("{:.0}", p.delay),
             p.delay as f32 / 30.,
-            110,
-            177,
+            44,
+            188,
         ),
         (
             3,
             "Music Volume",
             format!("{:.0}%", p.music * 100.),
             p.music,
-            292,
-            133,
+            254,
+            148,
         ),
         (
             4,
             "Sound Volume",
             format!("{:.0}%", p.sound * 100.),
             p.sound,
-            292,
-            177,
+            254,
+            188,
         ),
     ] {
         if selected == index {
-            r.rect(x - 4, y - 2, 170, 36, 0x22ffa358);
+            r.rect(x - 4, y - 2, 194, 44, 0x22ffa358);
         }
         r.label(
-            &tr(label),
+            &if label == "Auto-Forward Time" && p.lang == "es" {
+                "Avance automático".into()
+            } else {
+                tr(label)
+            },
             x,
             y,
-            148. - r.width(&value, 10),
+            178. - r.width(&value, 10),
             12,
             if selected == index { BLUE } else { INK },
         );
-        r.text(&value, x + 155 - r.width(&value, 10) as i32, y, 10, INK);
+        r.text(&value, x + 186 - r.width(&value, 10) as i32, y, 10, INK);
         r.image(
             "ui slider/horizontal_idle_bar",
             x,
             y + 16,
-            Some((156, 16)),
+            Some((186, 24)),
             255,
             false,
         );
@@ -310,25 +382,26 @@ fn settings_scene(r: &mut Renderer, story: &Story, p: &Prefs, selected: usize) {
             },
             x as f32,
             (y + 16) as f32,
-            156.,
-            16.,
+            186.,
+            24.,
             fraction,
         );
     }
     if selected == 9 {
-        r.rect(106, 219, 166, 19, 0x33ffa358);
+        r.rect(40, 227, 198, 17, 0x33ffa358);
     }
     r.text(
         &tr("Return"),
-        110,
-        221,
+        44,
+        229,
         12,
         if selected == 9 { BLUE } else { INK },
     );
-    r.text(
+    r.label(
         "D-pad: select   Left/Right: adjust   X: toggle   O: back",
         18,
         253,
+        444.,
         10,
         INK,
     );
@@ -353,6 +426,8 @@ fn psp_main() {
     }
     psp::enable_home_button();
     unsafe {
+        // Official PSP clock limits; keep the firmware default if it refuses.
+        let _ = sys::scePowerSetClockFrequency(333, 333, 166);
         sys::sceDisplaySetMode(sys::DisplayMode::Lcd, W, H);
         sys::sceCtrlSetSamplingCycle(0);
         sys::sceCtrlSetSamplingMode(sys::CtrlMode::Digital);
@@ -366,6 +441,7 @@ fn psp_main() {
     let mut r = Renderer::new(root);
     let story = Story::load();
     let mut p: Prefs = load("PREFS").unwrap_or_default();
+    p.normalize(&story);
     let (music, sound) = (
         Audio::new(root, &r.manifest.audio, true),
         Audio::new(root, &r.manifest.audio, false),
@@ -384,10 +460,11 @@ fn psp_main() {
     let mut pause_until = 0.;
     let mut skip_gate = playback::SkipGate::default();
     let mut prefs_dirty = false;
-    let mut prefs_saved_at = now();
+    let mut prefs_retry = persistence::SaveRetry::default();
     let mut seen_effect_id = state.effect_id;
     let mut effect_started = now();
     let mut all = false;
+    let mut line_effects_suppressed = false;
     let mut base = gpu::Frame::new();
     let mut old = base.clone();
     let mut buffer = 0;
@@ -398,6 +475,7 @@ fn psp_main() {
     let mut slots_page: Option<Page> = None;
     loop {
         let time = now();
+        let previous_page = page;
         unsafe {
             sys::sceCtrlPeekBufferPositive(&mut pad, 1);
         }
@@ -410,6 +488,7 @@ fn psp_main() {
             pc = state.pc;
             started = time;
             all = false;
+            line_effects_suppressed = false;
             old.clone_from(&base);
             r.scene(&state, &story);
             base.clone_from(&r.frame);
@@ -431,7 +510,9 @@ fn psp_main() {
         if audit && frames == 90 && io::exists(&format!("{root}/DATA/PERF")) {
             let navigation = audit::performance(&mut r, &story);
             let skip = audit::skip_playback(&mut r, &story);
-            let result = serde_json::json!({"navigation": navigation, "skip_playback": skip});
+            let result = serde_json::json!({"navigation": navigation, "skip_playback": skip,
+                "cpu_mhz": unsafe { sys::scePowerGetCpuClockFrequencyInt() },
+                "bus_mhz": unsafe { sys::scePowerGetBusClockFrequencyInt() }});
             save("PERF", &result);
             unsafe {
                 sys::sceKernelExitGame();
@@ -583,6 +664,7 @@ fn psp_main() {
                         pc = state.pc;
                         started = time;
                         all = true;
+                        line_effects_suppressed = true;
                         r.scene(&state, &story);
                         base.clone_from(&r.frame);
                         seen_effect_id = state.effect_id;
@@ -594,7 +676,7 @@ fn psp_main() {
 
                 let text = clean_text(&story.translate(&state.text, &p.lang));
                 let total = text.chars().count();
-                let eligible = p.unseen || p.read.contains(&state.pc);
+                let eligible = p.unseen || p.read.binary_search(&state.pc).is_ok();
                 let interrupt = (cross && matches!(stop, Stop::Say | Stop::Pause(_)))
                     || circle
                     || pressed.intersects(B::LTRIGGER | B::START | B::SQUARE);
@@ -606,24 +688,24 @@ fn psp_main() {
                     stop != Stop::Say || eligible,
                 ) && matches!(stop, Stop::Say | Stop::Pause(_));
                 let skip_advance = skip_gate.advance_due(skip, time);
+                // Cancelling skip must not restart a skipped fade or camera shake.
+                line_effects_suppressed |= skip || p.transitions;
                 let shown = if all || skip || p.cps <= 0. || audit {
                     total
                 } else {
                     ((time - started) * p.cps as f64) as usize
                 };
                 let complete = shown >= total;
-                if stop == Stop::Say && complete && !p.read.contains(&state.pc) {
-                    p.read.push(state.pc);
+                if stop == Stop::Say && complete && p.mark_read(state.pc) {
                     prefs_dirty = true;
                 }
                 r.frame.clone_from(&base);
                 let age = time - started;
-                if !skip && !p.transitions && age < 0.18 {
+                if !line_effects_suppressed && age < 0.18 {
                     r.frame.fade_from(&old, (age / 0.18 * 255.) as u32);
                 }
                 let effect_age = time - effect_started;
-                if !skip
-                    && !p.transitions
+                if !line_effects_suppressed
                     && ["vpunch", "hpunch"].contains(&state.effect.as_str())
                     && effect_age < 0.275
                 {
@@ -810,12 +892,14 @@ fn psp_main() {
                                 .map(|slot| {
                                     format!(
                                         "Slot {slot}: {}",
-                                        load::<State>(&format!("SLOT{slot}"))
-                                            .map(|s| clean_text(&s.text)
-                                                .chars()
-                                                .take(35)
-                                                .collect::<String>())
-                                            .unwrap_or("Empty".into())
+                                        load_checked::<State>(&format!("SLOT{slot}"), |s| {
+                                            valid_save(&story, s)
+                                        })
+                                        .map(|s| clean_text(&s.text)
+                                            .chars()
+                                            .take(35)
+                                            .collect::<String>())
+                                        .unwrap_or("Empty".into())
                                     )
                                 })
                                 .collect();
@@ -917,8 +1001,10 @@ fn psp_main() {
                             save("PREFS", &p);
                         }
                         Page::Load => {
-                            if let Some(s) = load::<State>(&format!("SLOT{}", selected + 1))
-                                .filter(|s| s.pc > 0 && s.pc <= story.ops.len())
+                            if let Some(s) =
+                                load_checked::<State>(&format!("SLOT{}", selected + 1), |s| {
+                                    valid_save(&story, s)
+                                })
                             {
                                 state = s;
                                 stop = match story.ops[state.pc - 1].op.as_str() {
@@ -932,6 +1018,9 @@ fn psp_main() {
                                 pc = usize::MAX;
                                 auto = false;
                                 skipping = false;
+                            } else {
+                                notice = "Save is empty or invalid".into();
+                                notice_until = time + 2.;
                             }
                         }
                         Page::Extras => {
@@ -998,8 +1087,7 @@ fn psp_main() {
         }
         if advance && page == Page::Game {
             if stop == Stop::Say {
-                if !p.read.contains(&state.pc) {
-                    p.read.push(state.pc);
+                if p.mark_read(state.pc) {
                     prefs_dirty = true;
                 }
                 history.push_back(state.clone());
@@ -1049,10 +1137,9 @@ fn psp_main() {
         if page != Page::Save && page != Page::Load {
             slots_page = None;
         }
-        if prefs_dirty && (page != Page::Game || time - prefs_saved_at >= 2.) {
+        if prefs_dirty && prefs_retry.due(time, previous_page == Page::Game && page != Page::Game) {
             if save("PREFS", &p) {
                 prefs_dirty = false;
-                prefs_saved_at = time;
             }
         }
         r.present(buffer);
