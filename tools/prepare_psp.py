@@ -1,6 +1,6 @@
 """Keep source-resolution art in compact GE DXT5 tiles and PSP logical geometry."""
 import hashlib, json, math, pathlib, subprocess, shutil
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, __version__ as PILLOW_VERSION
 import imageio_ffmpeg
 from psp_textures import encode_texture
 from psp_pipeline import atomic_json, atomic_write, cached_image_descriptor, cleanup_obsolete, convert_audio_cached, load_valid_manifest, sha256_file, unique_audio_stems, validate_manifest
@@ -13,7 +13,7 @@ story['translations']={k:v for k,v in story['translations'].items() if k=='es'}
 images=dict(story['images']); images.update({'ui '+n:'gui/'+n+'.png' for n in ['main_menu','game_menu','textbox','nvl']})
 manifest={'images':{},'fonts':{},'audio':{},'version':9,'art_scale':1.0,'texture_format':'PSP DXT5 / RGBA quality fallback','inline_symbols':story.get('inline_symbols',{})}
 files={}; active={'MANIFEST.JSON'}; image_hashes={}; image_cache_hits=0
-IMAGE_RECIPE='source-resolution-dxt5-rgba-tiles-248-gutter4-mips-2-v11'
+IMAGE_RECIPE='source-resolution-dxt5-rgba-tiles-248-gutter4-mips-2-v11-pillow-'+PILLOW_VERSION
 for source,target in [('Twemoji-LICENSE.txt','TWEMOJI.TXT'),('DejaVu-LICENSE.txt','DEJAVU.TXT')]:
  shutil.copyfile(ROOT/'assets/gui/emoji'/source,OUT/target);active.add(target)
 shutil.copyfile(ROOT/'assets/tl/None/SIL Open Font License.txt',OUT/'NUNITO.TXT');active.add('NUNITO.TXT')
