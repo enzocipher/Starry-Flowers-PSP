@@ -1,2 +1,2 @@
 # Preserve upstream resource bytes, including original CRLF and whitespace.
-/assets/** -text -whitespace
+/assets/** -text -whitespace linguist-vendored
