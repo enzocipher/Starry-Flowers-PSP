@@ -26,8 +26,8 @@ jobs:
         with:
           python-version: '3.12.3'
 
-      - name: Install pinned Python test dependency
-        run: python -m pip install --disable-pip-version-check Pillow==12.3.0
+      - name: Install pinned Python dependencies
+        run: python -m pip install --disable-pip-version-check -r tools/requirements-psp.txt
 
       - name: Compile the story from the tracked source assets
         run: python tools/compile_story.py
@@ -49,6 +49,16 @@ jobs:
 
       - name: Test Python PSP pipeline and texture helpers
         run: python -m unittest discover -s tools -p 'test_psp*.py'
+
+      - name: Test GU stack bounds and debug pixel writes on the host
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $taskTestExe = Join-Path $env:RUNNER_TEMP 'starryflowers-gu-state-tests.exe'
+          rustc --edition=2018 --test third_party/psp/src/sys/gu_state.rs -o $taskTestExe
+          if ($LASTEXITCODE -ne 0) { throw 'GU test compilation failed.' }
+          & $taskTestExe
+          if ($LASTEXITCODE -ne 0) { throw 'GU tests failed.' }
 
   psp-build:
     name: Build and verify the complete PSP ISO and homebrew

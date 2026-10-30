@@ -5,8 +5,12 @@ use crate::sys::{
     kernel::SceUid,
     types::{ScePspFMatrix4, ScePspFVector3, ScePspIMatrix4, ScePspIVector4},
 };
-use core::{ffi::c_void, mem, ptr::addr_of_mut, ptr::null_mut};
+use core::{ffi::c_void, mem, ptr::addr_of_mut, ptr::null_mut, ptr::NonNull};
 use num_enum::TryFromPrimitive;
+
+#[path = "gu_state.rs"]
+mod gu_state;
+use gu_state::{DebugSurface, ObjectStack};
 
 #[allow(clippy::approx_constant)]
 pub const GU_PI: f32 = 3.141593;
@@ -768,7 +772,7 @@ static mut SETTINGS: Settings = Settings {
     swap_buffers_callback: None,
 };
 
-static mut LIST: *mut GuDisplayList = null_mut();
+static mut LIST: Option<NonNull<GuDisplayList>> = None;
 static mut CURR_CONTEXT: GuContextType = GuContextType::Direct;
 static mut INIT: i32 = 0;
 static mut DISPLAY_ON: bool = false;
@@ -786,8 +790,7 @@ static mut DRAW_BUFFER: GuDrawBuffer = GuDrawBuffer {
     pixel_size: DisplayPixelFormat::Psm5650,
 };
 
-static mut OBJECT_STACK: *mut *mut u32 = null_mut();
-static mut OBJECT_STACK_DEPTH: i32 = 0;
+static mut OBJECT_STACK: ObjectStack = ObjectStack::new();
 
 const LIGHT_COMMANDS: [GuLightSettings; 4] = [
     GuLightSettings {
@@ -861,9 +864,20 @@ const LIGHT_COMMANDS: [GuLightSettings; 4] = [
 ];
 
 #[inline]
+unsafe fn active_list() -> &'static mut GuDisplayList {
+    // LIST only points into static CONTEXTS; Start supplies the caller-owned
+    // command buffer. GU callers must serialize access and keep that buffer live.
+    let mut pointer = LIST.expect("sceGuStart must precede display-list operations");
+    let list = pointer.as_mut();
+    assert!(!list.current.is_null(), "No active GU command buffer");
+    list
+}
+
+#[inline]
 unsafe fn send_command_i(cmd: GeCommand, argument: i32) {
-    (*(*LIST).current) = ((cmd as u32) << 24) | (argument as u32 & 0xffffff);
-    (*LIST).current = (*LIST).current.add(1);
+    let list = active_list();
+    *list.current = ((cmd as u32) << 24) | (argument as u32 & 0xffffff);
+    list.current = list.current.add(1);
 }
 
 #[inline]
@@ -874,8 +888,11 @@ unsafe fn send_command_f(cmd: GeCommand, argument: f32) {
 #[inline]
 unsafe fn send_command_i_stall(cmd: GeCommand, argument: i32) {
     send_command_i(cmd, argument);
-    if let (GuContextType::Direct, 0) = (CURR_CONTEXT, OBJECT_STACK_DEPTH) {
-        crate::sys::sceGeListUpdateStallAddr(GE_LIST_EXECUTED[0], (*LIST).current as *mut c_void);
+    if matches!(CURR_CONTEXT, GuContextType::Direct) && OBJECT_STACK.is_empty() {
+        crate::sys::sceGeListUpdateStallAddr(
+            GE_LIST_EXECUTED[0],
+            active_list().current as *mut c_void,
+        );
     }
 }
 
@@ -891,7 +908,10 @@ unsafe fn reset_values() {
     INIT = 0;
     STATES = 0;
     CURRENT_FRAME = 0;
-    OBJECT_STACK_DEPTH = 0;
+    LIST = None;
+    CURR_CONTEXT = GuContextType::Direct;
+    OBJECT_STACK = ObjectStack::new();
+    CHAR_BUFFER_USED = 0;
     DISPLAY_ON = false;
     CALL_MODE = 0;
     DRAW_BUFFER.pixel_size = DisplayPixelFormat::Psm5551;
@@ -905,6 +925,9 @@ unsafe fn reset_values() {
 
     for i in 0..CONTEXTS.len() {
         let context = addr_of_mut!(CONTEXTS[i]);
+        (*context).list.start = null_mut();
+        (*context).list.current = null_mut();
+        (*context).list.parent_context = GuContextType::Direct;
         (*context).scissor_enable = 0;
         (*context).scissor_start = [0, 0];
         (*context).scissor_end = [0, 0];
@@ -1612,14 +1635,15 @@ pub unsafe extern "C" fn sceGuSendCommandi(cmd: GeCommand, argument: i32) {
 /// Memory-block ready for use
 #[allow(non_snake_case)]
 #[no_mangle]
-pub unsafe extern "C" fn sceGuGetMemory(mut size: i32) -> *mut c_void {
-    // Some kind of 4-byte alignment?
-    size += 3;
-    size += (((size >> 31) as u32) >> 30) as i32;
-    size = (size >> 2) << 2;
-
-    let orig_ptr = (*LIST).current;
-    let new_ptr = (orig_ptr as usize + size as usize + 8) as *mut u32;
+pub unsafe extern "C" fn sceGuGetMemory(size: i32) -> *mut c_void {
+    assert!(size >= 0, "Negative GU allocation size");
+    let size = (size as usize)
+        .checked_add(3)
+        .expect("GU allocation overflow")
+        & !3;
+    let orig_ptr = active_list().current;
+    // The caller still owns the display-list capacity, as required by libgu.
+    let new_ptr = orig_ptr.add(size / 4 + 2);
 
     let lo = (8 << 24) | (new_ptr as i32 & 0xffffff);
     let hi = ((16 << 24) | ((new_ptr as u32 >> 8) & 0xf0000)) as i32;
@@ -1627,7 +1651,7 @@ pub unsafe extern "C" fn sceGuGetMemory(mut size: i32) -> *mut c_void {
     *orig_ptr = hi as u32;
     *orig_ptr.offset(1) = lo as u32;
 
-    (*LIST).current = new_ptr;
+    active_list().current = new_ptr;
 
     if let GuContextType::Direct = CURR_CONTEXT {
         crate::sys::sceGeListUpdateStallAddr(GE_LIST_EXECUTED[0], new_ptr.cast::<c_void>());
@@ -1647,6 +1671,10 @@ pub unsafe extern "C" fn sceGuGetMemory(mut size: i32) -> *mut c_void {
 #[allow(non_snake_case)]
 #[no_mangle]
 pub unsafe extern "C" fn sceGuStart(context_type: GuContextType, list: *mut c_void) {
+    assert!(
+        !list.is_null() && (list as usize & 15) == 0,
+        "GU list must be non-null and 16-byte aligned"
+    );
     let context = &mut CONTEXTS[context_type as usize];
     let local_list = ((list as u32) | 0x4000_0000) as *mut u32;
 
@@ -1654,7 +1682,7 @@ pub unsafe extern "C" fn sceGuStart(context_type: GuContextType, list: *mut c_vo
     context.list.start = local_list;
     context.list.current = local_list;
     context.list.parent_context = CURR_CONTEXT;
-    LIST = &mut context.list;
+    LIST = Some(NonNull::from(&mut context.list));
 
     // store current context
     CURR_CONTEXT = context_type;
@@ -1759,11 +1787,12 @@ pub unsafe extern "C" fn sceGuFinish() -> i32 {
         }
     }
 
-    let size = ((*LIST).current as usize) - ((*LIST).start as usize);
+    let list = active_list();
+    let size = (list.current as usize) - (list.start as usize);
 
     // Go to parent list
-    CURR_CONTEXT = (*LIST).parent_context;
-    LIST = &mut CONTEXTS[CURR_CONTEXT as usize].list;
+    CURR_CONTEXT = list.parent_context;
+    LIST = Some(NonNull::from(&mut CONTEXTS[CURR_CONTEXT as usize].list));
     size as i32
 }
 
@@ -1801,11 +1830,12 @@ pub unsafe extern "C" fn sceGuFinishId(id: u32) -> i32 {
         }
     }
 
-    let size = ((*LIST).current as usize) - ((*LIST).start as usize);
+    let list = active_list();
+    let size = (list.current as usize) - (list.start as usize);
 
     // Go to parent list
-    CURR_CONTEXT = (*LIST).parent_context;
-    LIST = &mut CONTEXTS[CURR_CONTEXT as usize].list;
+    CURR_CONTEXT = list.parent_context;
+    LIST = Some(NonNull::from(&mut CONTEXTS[CURR_CONTEXT as usize].list));
     size as i32
 }
 
@@ -1850,7 +1880,8 @@ pub unsafe extern "C" fn sceGuCallMode(mode: i32) {
 #[allow(non_snake_case)]
 #[no_mangle]
 pub unsafe extern "C" fn sceGuCheckList() -> i32 {
-    (*LIST).current.byte_offset_from((*LIST).start) as i32
+    let list = active_list();
+    list.current.byte_offset_from(list.start) as i32
 }
 
 /// Send a list to the GE directly
@@ -2009,6 +2040,9 @@ pub unsafe extern "C" fn sceGuBeginObject(
     indices: *const c_void,
     vertices: *const c_void,
 ) {
+    // Check nesting before emitting any commands. Storage is owned by GU,
+    // never a null/unallocated stack, and is limited to the documented 32 levels.
+    assert!(!OBJECT_STACK.is_full(), "GU object stack overflow");
     if vtype != 0 {
         send_command_i(GeCommand::VertexType, vtype);
     }
@@ -2026,8 +2060,9 @@ pub unsafe extern "C" fn sceGuBeginObject(
     send_command_i(GeCommand::BoundingBox, count);
 
     // Store start to new object
-    (*OBJECT_STACK.offset(OBJECT_STACK_DEPTH as isize)) = (*LIST).current;
-    OBJECT_STACK_DEPTH += 1;
+    // The jump patch follows the vertex setup commands, not the object start.
+    let patch = NonNull::new(active_list().current).expect("No active GU list");
+    assert!(OBJECT_STACK.push(patch), "GU object stack overflow");
 
     // Dummy commands, overwritten in `sceGuEndObject`
     send_command_i(GeCommand::Base, 0);
@@ -2040,13 +2075,13 @@ pub unsafe extern "C" fn sceGuBeginObject(
 pub unsafe extern "C" fn sceGuEndObject() {
     // Rewrite commands from `sceGuBeginObject`
 
-    let current = (*LIST).current;
-    (*LIST).current = *OBJECT_STACK.offset(OBJECT_STACK_DEPTH as isize - 1);
+    let current = active_list().current;
+    let patch = OBJECT_STACK.pop().expect("GU object stack underflow");
+    active_list().current = patch.as_ptr();
 
     send_command_i(GeCommand::Base, (current as u32 >> 8) as i32 & 0xf0000);
     send_command_i(GeCommand::BJump, current as i32 & 0xffffff);
-    (*LIST).current = current;
-    OBJECT_STACK_DEPTH -= 1;
+    active_list().current = current;
 }
 
 /// Enable or disable GE state
@@ -3521,142 +3556,95 @@ struct DebugCharStruct {
 #[allow(non_snake_case)]
 #[no_mangle]
 pub unsafe extern "C" fn sceGuDebugPrint(x: i32, mut y: i32, mut color: u32, mut msg: *const u8) {
-    let mut cur_char: u8;
-    let mut uVar1: u32;
-    let iVar2: i32;
-    let mut cur_x: i32;
-    let mut char_struct_ptr: *mut DebugCharStruct =
-        addr_of_mut!(CHAR_BUFFER).cast::<DebugCharStruct>();
-
-    let mut i = CHAR_BUFFER_USED;
-    if i >= 0x3ff {
+    if msg.is_null() {
         return;
     }
-    uVar1 = color >> 8 & 0xff;
-    let uVar3 = color >> 16 & 0xff;
-    let iVar4 = (uVar3 >> 3) as i32;
-    cur_x = x;
-    match DRAW_BUFFER.pixel_size {
+    color = match DRAW_BUFFER.pixel_size {
         DisplayPixelFormat::Psm5650 => {
-            iVar2 = (uVar1 as i32) >> 2;
-            uVar1 = (iVar4 as u32) << 0xb;
-            uVar1 = (uVar1 | iVar2 as u32) << 5;
-            color = (color & 0xff) >> 3;
-            color |= uVar1;
+            ((color & 0xff) >> 3)
+                | (((color >> 8) & 0xff) >> 2) << 5
+                | (((color >> 16) & 0xff) >> 3) << 11
         }
         DisplayPixelFormat::Psm5551 => {
-            iVar2 = (uVar1 >> 3) as i32;
-            uVar1 = ((color >> 24) >> 7) << 0xf | (iVar4 as u32) << 10;
-            uVar1 = (uVar1 | iVar2 as u32) << 5;
-            color = (color & 0xff) >> 3;
-            color |= uVar1;
+            ((color & 0xff) >> 3)
+                | (((color >> 8) & 0xff) >> 3) << 5
+                | (((color >> 16) & 0xff) >> 3) << 10
+                | ((color >> 31) << 15)
         }
-        DisplayPixelFormat::Psm8888 => {}
         DisplayPixelFormat::Psm4444 => {
-            uVar1 = ((color >> 0x18) >> 4) << 0xc | (uVar3 >> 4) << 8 | (uVar1 >> 4) << 4;
-            color &= 0xff >> 4;
-            color |= uVar1;
+            ((color & 0xff) >> 4)
+                | (((color >> 8) & 0xff) >> 4) << 4
+                | (((color >> 16) & 0xff) >> 4) << 8
+                | ((color >> 28) << 12)
         }
-    }
-    cur_char = *msg;
-    while cur_char != b'\0' {
-        if cur_char == b'\n' {
-            y += 8;
+        DisplayPixelFormat::Psm8888 => color,
+    };
+    let mut cur_x = x;
+    let mut used = (CHAR_BUFFER_USED as usize).min(2048);
+    // The caller supplies a valid NUL-terminated string; the destination is bounded.
+    while used < 2048 {
+        let character = *msg;
+        if character == 0 {
+            break;
+        }
+        if character == b'\n' {
+            y = y.saturating_add(8);
             cur_x = x;
         } else {
-            (*char_struct_ptr).x = cur_x;
-            i += 1;
-            (*char_struct_ptr).character = cur_char - 0x20;
-            (*char_struct_ptr).y = y;
-            (*char_struct_ptr).color = color;
-            char_struct_ptr = (char_struct_ptr as u32 + 16) as *mut DebugCharStruct;
-            cur_x += 8;
+            if (0x20..=0x7f).contains(&character) {
+                CHAR_BUFFER[used] = DebugCharStruct {
+                    x: cur_x,
+                    y,
+                    color,
+                    character: character - 0x20,
+                    unused: [0; 3],
+                };
+                used += 1;
+            }
+            cur_x = cur_x.saturating_add(8);
         }
         msg = msg.add(1);
-        cur_char = *msg;
     }
-    CHAR_BUFFER_USED = i;
+    CHAR_BUFFER_USED = used as u32;
 }
 
-/// Flush character buffer created by sceGuDebugPrint to the draw buffer
+/// Flush character buffer created by sceGuDebugPrint to the draw buffer.
+/// The caller must synchronize the GE before CPU writes to the draw buffer.
 #[allow(non_snake_case)]
 #[no_mangle]
 pub unsafe extern "C" fn sceGuDebugFlush() {
-    let edram_address = GE_EDRAM_ADDRESS;
-    let mut pixel_size: DisplayPixelFormat;
-    let mut frame_width: i32;
-    let mut frame_buffer: *mut c_void;
-    let draw_buffer_height = DRAW_BUFFER.height;
-    let mut char_index: i32;
-    let mut pos: i32;
-    let mut x_pixel_counter: i32;
-    let mut glyph_pos: u32 = 0;
-    let mut color: u32;
-    let mut font_glyph: u32 = 0;
-    let mut y_pixel_counter: i32;
-    let mut x: i32;
-    let mut char_buffer_used = CHAR_BUFFER_USED;
-    let mut y: i32;
-    let mut char_struct_ptr: *mut DebugCharStruct =
-        addr_of_mut!(CHAR_BUFFER).cast::<DebugCharStruct>();
-
-    if char_buffer_used != 0 {
-        loop {
-            frame_buffer = DRAW_BUFFER.frame_buffer;
-            frame_width = DRAW_BUFFER.frame_width;
-            pixel_size = DRAW_BUFFER.pixel_size;
-            y = (*char_struct_ptr).y;
-            x = (*char_struct_ptr).x;
-            if (y + 7 < draw_buffer_height)
-                && (((x + 7 < DRAW_BUFFER.width) as i32 & !y >> 0x1f) != 0)
-                && -1 < x
-            {
-                color = (*char_struct_ptr).color;
-                char_index = ((*char_struct_ptr).character) as i32 * 8;
-                y_pixel_counter = 0;
-                loop {
-                    if y_pixel_counter == 0 {
-                        font_glyph =
-                            *(((&FONT as *const _ as u32) + char_index as u32) as *const u32);
-                        glyph_pos = 1;
-                    } else if y_pixel_counter == 4 {
-                        font_glyph =
-                            *(((&FONT as *const _ as u32) + 4 + char_index as u32) as *const u32);
-                        glyph_pos = 1
-                    }
-                    x_pixel_counter = 7;
-                    pos = x + (y + y_pixel_counter) * frame_width;
-                    pos = pos * 4 + edram_address as i32 + frame_buffer as i32;
-                    loop {
-                        match pixel_size {
-                            DisplayPixelFormat::Psm8888 => {
-                                if font_glyph & glyph_pos != 0 {
-                                    *((pos as u32 + 0x4000_0000) as *mut u32) = color;
-                                }
-                            }
-                            _ => {
-                                *((pos as u32 + 0x4000_0002) as *mut u16) = color as u16;
-                            }
-                        }
-                        x_pixel_counter -= 1;
-                        glyph_pos <<= 1;
-                        pos += 4;
-                        if x_pixel_counter <= -1 {
-                            break;
-                        }
-                    }
-                    y_pixel_counter += 1;
-                    if 8 <= y_pixel_counter {
-                        break;
-                    }
-                }
-            }
-            char_buffer_used -= 1;
-            char_struct_ptr = ((char_struct_ptr as u32) + 16) as *mut DebugCharStruct;
-            if char_buffer_used == 0 {
-                break;
-            }
+    let used = (CHAR_BUFFER_USED as usize).min(2048);
+    CHAR_BUFFER_USED = 0;
+    if used == 0 || GE_EDRAM_ADDRESS.is_null() {
+        return;
+    }
+    let size = sys::sceGeEdramGetSize() as usize;
+    if size == 0 || size > isize::MAX as usize {
+        return;
+    }
+    // PSP EDRAM is kernel-provided mapped RAM; use its uncached alias. The slice
+    // spans only the reported VRAM allocation, never an arbitrary pixel address.
+    let base = ((GE_EDRAM_ADDRESS as usize) | 0x4000_0000) as *mut u8;
+    let Some(base) = NonNull::new(base) else {
+        return;
+    };
+    let buffer = core::slice::from_raw_parts_mut(base.as_ptr(), size);
+    let surface = DebugSurface {
+        offset: DRAW_BUFFER.frame_buffer as usize,
+        stride: DRAW_BUFFER.frame_width.max(0) as usize,
+        width: DRAW_BUFFER.width.max(0) as usize,
+        height: DRAW_BUFFER.height.max(0) as usize,
+        bytes_per_pixel: if matches!(DRAW_BUFFER.pixel_size, DisplayPixelFormat::Psm8888) {
+            4
+        } else {
+            2
+        },
+    };
+    for index in 0..used {
+        let character = CHAR_BUFFER[index];
+        let offset = character.character as usize * 8;
+        if let Some(glyph) = FONT.get(offset..offset + 8) {
+            surface.draw_glyph(buffer, character.x, character.y, character.color, glyph);
         }
-        CHAR_BUFFER_USED = 0;
     }
 }
