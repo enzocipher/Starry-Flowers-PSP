@@ -2,7 +2,7 @@
 
 Native Rust port for PSP, maintained on the `main` branch of [Starry-Flowers-PSP](https://github.com/enzocipher/Starry-Flowers-PSP). The PC version is available at [Starry-Flowers-but-in-Rust](https://github.com/enzocipher/Starry-Flowers-but-in-Rust).
 
-The firmware is in `psp/`; the narrative engine and the layout it uses are included in `src/`. The root `Cargo.toml` only builds that library for host tests, without Macroquad or a PC application. All scripts run from the repository root, which has its own local `assets/` directory.
+The firmware is in `psp/`; the narrative engine and the layout it uses are included in `src/`. The root `Cargo.toml` only builds that library for host tests, without Macroquad or a PC application. All scripts run from the repository root, which has its own tracked `assets/` directory.
 
 ## Running
 
@@ -12,7 +12,17 @@ The firmware is in `psp/`; the narrative engine and the layout it uses are inclu
 
 The ISO and EBOOT include `ICON0.PNG` (144×80) and `PIC1.PNG` (480×272), prepared from the original logo and background so they are displayed in PPSSPP and the PSP menu.
 
-The ISO includes a real MIPS PSP executable and converted resources from your copy of Starry Flowers 1.7.4. The game does not require Python or Ren'Py at runtime.
+The ISO includes a real MIPS PSP executable and converted resources from the included Starry Flowers 1.7.4 assets. The game does not require Python or Ren'Py at runtime.
+
+## Releases and CI artifacts
+
+GitHub Actions builds a complete ISO and homebrew ZIP, verifies the native executable, art, and packed resources, and generates `SHA256SUMS.txt`. The `StarryFlowers-PSP` Actions artifact contains `StarryFlowers.iso`, `StarryFlowers-homebrew.zip`, and `SHA256SUMS.txt`; download it from a PSP CI run. Pushing a new `v*` tag creates a draft GitHub Release with these files after tests pass; the owner reviews and publishes it. `workflow_dispatch` builds downloadable artifacts without creating a release.
+
+The repository tracks the original Starry Flowers 1.7.4 source assets in `assets/`, including art, music, Ren'Py scripts, translations, fonts, and extracted inline emoji with their existing license notices. No original PC installation or Git LFS is required; a normal Git clone is sufficient. Compiled Ren'Py `*.rpyc` and `*.rpymc` files are excluded, and generated PSP `DATA`, `EBOOT`, and ISO files remain ignored.
+
+Build prerequisites: Rust `nightly-2026-10-05-x86_64-pc-windows-gnu` with `rust-src`, `cargo-psp` 0.2.9, and the dependencies in `tools/requirements-psp.txt`. See the [releases](https://github.com/enzocipher/Starry-Flowers-PSP/releases).
+
+To build and verify the same release files locally, run `./tools/ci-psp-build.ps1 -Python python`. For the homebrew ZIP, copy its `StarryFlowers` folder to `PSP/GAME/` on the Memory Stick. Asset credits and bundled license paths are listed in [ASSETS.md](ASSETS.md).
 
 ## Controls
 
@@ -32,17 +42,17 @@ English is the initial language; Spanish can be selected in Settings. Options in
 
 ## Building on Windows
 
-Requires Rust nightly with `rust-src`, `cargo-psp 0.2.9`, Python, and the original resources in `../assets`. It has been built with nightly **2026-10-05**, Windows GNU host. The Pillow, imageio-ffmpeg, and pycdlib versions used for preparation and packaging are pinned in `tools/requirements-psp.txt`.
+Requires Rust nightly with `rust-src`, `cargo-psp 0.2.9`, Python, and the tracked resources in `assets/`. It has been built with nightly **2026-10-05**, Windows GNU host. The Pillow, imageio-ffmpeg, and pycdlib versions used for preparation and packaging are pinned in `tools/requirements-psp.txt`.
 
 ```powershell
-rustup toolchain install nightly-x86_64-pc-windows-gnu --component rust-src --profile minimal
-cargo install cargo-psp --version 0.2.9
+rustup toolchain install nightly-2026-10-05-x86_64-pc-windows-gnu --component rust-src --profile minimal
+cargo install cargo-psp --version 0.2.9 --locked
 python -m pip install -r tools/requirements-psp.txt
 # From the repository root:
 ./tools/build_psp.ps1 -Python python
 ```
 
-`prepare_psp.py` preserves the source art and converts it to PSP GE DXT5 tiles with mipmaps; it keeps the game's logical geometry at 0.375 scale, generates a Nunito atlas, and converts audio to 44.1 kHz stereo PCM. The cache uses content and configuration hashes to reuse unchanged images and audio. The manifest is validated before obsolete generated files from the previous manifest are removed; unknown files are preserved. `package_psp.py` generates the ISO and checks that `PSP_GAME/SYSDIR/EBOOT.BIN` contains the native ELF executable. Generated files and game resources are excluded from Git.
+`prepare_psp.py` preserves the source art and converts it to PSP GE DXT5 tiles with mipmaps; it keeps the game's logical geometry at 0.375 scale, generates a Nunito atlas, and converts audio to 44.1 kHz stereo PCM. The cache uses content and configuration hashes to reuse unchanged images and audio. The manifest is validated before obsolete generated files from the previous manifest are removed; unknown files are preserved. `package_psp.py` generates the ISO and checks that `PSP_GAME/SYSDIR/EBOOT.BIN` contains the native ELF executable. Source game resources are tracked in Git; generated files remain excluded.
 
 From the repository root, run manual preparation or pipeline tests as follows:
 
@@ -67,7 +77,7 @@ The copy of the narrative engine included in this repository is compiled, adapti
 
 The October 29, 2026 revision validates accessory, favorite, stack, and position indices before loading saves; it also checks a backup when the main JSON is readable but its state is invalid. It normalizes settings and limits automatic write retries to two seconds. Music retries opening and read errors with a 500 ms delay; repeated output errors re-reserve the channel. Normal effects EOF does not trigger repeats.
 
-Glyphs and images share their file names through `Arc<str>`, avoiding another string allocation per glyph and per scene copy. Preparation v11 preserves source resolution and checks all three levels of each tile: if DXT5 exceeds the error threshold, it stores the full chain in RGBA. In the current resources, this is 5 of 2,567 tiles and 149,184 additional bytes. The verifier compares 7,701 levels against the original art and the ISO's 2,600 resources against the prepared files.
+Glyphs and images share their file names through `Arc<str>`, avoiding another string allocation per glyph and per scene copy. Preparation v11 preserves source resolution and checks all three levels of each tile: if DXT5 exceeds the error threshold, it stores the full chain in RGBA. In the current resources, this is 5 of 2,567 tiles and 149,184 additional bytes. The verifier compares 7,701 levels against the original art and the ISO's 2,601 resources against the prepared files.
 
 ## Verification and limitations
 

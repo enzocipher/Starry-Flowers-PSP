@@ -1,0 +1,50 @@
+{
+  "💙": {
+    "image": "ui emoji/1f499",
+    "advance": 1.2421875,
+    "width": 1.2421875,
+    "height": 1.046875,
+    "baseline_top": -0.8671875,
+    "tint": false
+  },
+  "🤎": {
+    "image": "ui emoji/1f90e",
+    "advance": 1.2421875,
+    "width": 1.2421875,
+    "height": 1.046875,
+    "baseline_top": -0.8671875,
+    "tint": false
+  },
+  "❤": {
+    "image": "ui emoji/2764",
+    "advance": 1.2421875,
+    "width": 1.2421875,
+    "height": 1.046875,
+    "baseline_top": -0.8671875,
+    "tint": false
+  },
+  "♥": {
+    "image": "ui emoji/2665",
+    "advance": 1.2421875,
+    "width": 1.2421875,
+    "height": 1.1015625,
+    "baseline_top": -0.953125,
+    "tint": false
+  },
+  "✔": {
+    "image": "ui emoji/2714",
+    "advance": 1.2421875,
+    "width": 1.2421875,
+    "height": 1.15625,
+    "baseline_top": -0.9140625,
+    "tint": false
+  },
+  "✘": {
+    "image": "ui emoji/2718",
+    "advance": 0.8359375,
+    "width": 0.8359375,
+    "height": 0.7421875,
+    "baseline_top": -0.7421875,
+    "tint": true
+  }
+}

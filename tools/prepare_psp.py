@@ -16,6 +16,7 @@ files={}; active={'MANIFEST.JSON'}; image_hashes={}; image_cache_hits=0
 IMAGE_RECIPE='source-resolution-dxt5-rgba-tiles-248-gutter4-mips-2-v11'
 for source,target in [('Twemoji-LICENSE.txt','TWEMOJI.TXT'),('DejaVu-LICENSE.txt','DEJAVU.TXT')]:
  shutil.copyfile(ROOT/'assets/gui/emoji'/source,OUT/target);active.add(target)
+shutil.copyfile(ROOT/'assets/tl/None/SIL Open Font License.txt',OUT/'NUNITO.TXT');active.add('NUNITO.TXT')
 shutil.copyfile(ROOT/"licenses/RENPY-LICENSE.txt",OUT/"RENPY.TXT");active.add("RENPY.TXT")
 def power2(n): return max(16,1<<(n-1).bit_length())
 for name,path in images.items():

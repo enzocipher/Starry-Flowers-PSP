@@ -1,6 +1,7 @@
 /target/
 /target-final/
-/assets/
+/assets/**/*.rpyc
+/assets/**/*.rpymc
 /dist/
 /smoke*.png
 /layout-audit.txt
